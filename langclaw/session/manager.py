@@ -154,40 +154,39 @@ class SessionManager:
                 self._claude_mode_store[key] = True
             else:
                 self._claude_mode_store.pop(key, None)
-                # Also cleanup the session when exiting
-                self._claude_sessions.pop(key, None)
+                # Disconnect and cleanup the client when exiting
+                client = self._claude_sessions.pop(key, None)
+                if client:
+                    try:
+                        await client.disconnect()
+                        logger.info(f"Disconnected Claude SDK client for {key}")
+                    except Exception as e:
+                        logger.warning(f"Failed to disconnect Claude SDK client: {e}")
 
-    async def get_or_create_claude_session(
+    async def get_or_create_claude_client(
         self,
         channel: str,
         user_id: str,
-        agent_instance: Any,
     ) -> Any:
-        """Get or create a Claude Agent SDK session for a user.
+        """Get or create a ClaudeSDKClient for a user.
 
         Args:
-            channel:         Channel name.
-            user_id:         User identifier.
-            agent_instance:  The Agent SDK agent instance to use.
+            channel: Channel name.
+            user_id: User identifier.
 
         Returns:
-            A Claude Agent SDK Session instance.
+            ClaudeSDKClient instance.
         """
+        from claude_agent_sdk import ClaudeSDKClient
+
         key = f"{channel}:{user_id}"
         async with self._lock:
             if key not in self._claude_sessions:
-                # Import here to avoid hard dependency
-                try:
-                    from claude_agent_sdk import Session
-
-                    self._claude_sessions[key] = Session(agent=agent_instance)
-                    logger.info(f"Created new Claude SDK session for {key}")
-                except ImportError:
-                    logger.error(
-                        "claude-agent-sdk not installed. "
-                        "Install with: pip install claude-agent-sdk"
-                    )
-                    raise
+                client = ClaudeSDKClient()
+                # Connect the client
+                await client.connect()
+                self._claude_sessions[key] = client
+                logger.info(f"Created and connected Claude SDK client for {key}")
             return self._claude_sessions[key]
 
     def all_threads(self) -> dict[str, str]:

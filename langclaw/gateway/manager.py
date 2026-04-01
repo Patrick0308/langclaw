@@ -296,23 +296,16 @@ class GatewayManager:
                 return current
 
     def _init_claude_agent(self) -> Any:
-        """Initialize Claude Agent SDK agent for direct conversation mode.
+        """Check if Claude Agent SDK is available for /claude mode.
 
         Returns:
-            A Claude Agent SDK Agent instance, or None if SDK is not available.
+            True if SDK is available, None otherwise.
         """
         try:
-            from claude_agent_sdk import Agent
+            from claude_agent_sdk import ClaudeSDKClient  # noqa: F401
 
-            agent = Agent(
-                name="claude-assistant",
-                system_prompt=(
-                    "You are Claude, a helpful AI assistant. "
-                    "Provide clear, concise, and accurate responses."
-                ),
-            )
-            logger.info("Claude Agent SDK initialized for /claude mode")
-            return agent
+            logger.info("Claude Agent SDK available for /claude mode")
+            return True
         except ImportError:
             logger.warning(
                 "claude-agent-sdk not installed. "
@@ -390,34 +383,41 @@ class GatewayManager:
     ) -> None:
         """Handle messages using Claude Agent SDK for direct conversation.
 
-        In this mode, messages use the Claude Agent SDK which provides:
-        - Persistent conversation memory across messages
-        - Stateful sessions managed by the SDK
-        - Direct Claude API access without LangGraph overhead
+        In this mode, messages use Claude Agent SDK which:
+        - Communicates with Claude Code CLI
+        - Maintains persistent conversation state
+        - No LangGraph/tools/middleware overhead
+        - Provides simpler, direct interactions
 
         Args:
             msg:      The inbound message to handle.
             channel:  The channel to send responses to.
             metadata: Metadata to attach to outbound messages.
         """
+        from claude_agent_sdk import AssistantMessage
+
         try:
-            # Get or create Claude SDK session for this user
-            session = await self._sessions.get_or_create_claude_session(
+            # Get or create Claude SDK client for this user
+            client = await self._sessions.get_or_create_claude_client(
                 msg.channel,
                 msg.user_id,
-                self._claude_agent,
             )
 
             logger.info(
                 f"Claude SDK mode | channel={msg.channel} user={msg.user_id} | {msg.content[:100]}"
             )
 
-            # Send message to Claude SDK and get response
-            # The session automatically maintains conversation history
-            response = await session.send_message(msg.content)
+            # Send message to Claude via SDK
+            await client.query(msg.content)
 
-            # Extract response content
-            response_text = response.content if hasattr(response, "content") else str(response)
+            # Receive response stream and collect text
+            response_text = ""
+            async for message in client.receive_response():
+                if isinstance(message, AssistantMessage):
+                    # Extract text from assistant message
+                    for block in message.content:
+                        if hasattr(block, "text"):
+                            response_text += block.text
 
             # Send response back to channel
             if response_text:
@@ -761,7 +761,7 @@ class GatewayManager:
 
         # Check if user is in Claude Agent SDK mode
         is_claude_mode = await self._sessions.get_claude_mode(msg.channel, msg.user_id)
-        if is_claude_mode and self._claude_agent is not None:
+        if is_claude_mode:
             await self._handle_claude_mode(msg, channel, meta)
             return
 
