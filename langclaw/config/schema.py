@@ -179,6 +179,7 @@ class AgentConfig(BaseModel):
     rate_limit_rpm: int = 60
     banned_keywords: StringList = Field(default_factory=list)
     extra_skills: StringList = Field(default_factory=list)
+    claude_sdk_require_approval: bool = False
 
     root_dir: str = Field(default_factory=lambda: str(_LANGCLAW_HOME))
 

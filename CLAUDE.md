@@ -244,19 +244,69 @@ pip install claude-agent-sdk
 
 **Usage:**
 ```
-/claude              → enter Claude SDK mode (persistent session)
-<chat normally>      → all messages go to Claude SDK with memory
-/claude quit         → exit back to normal agent mode
+/claude start              → enter Claude SDK mode (persistent session)
+/claude workspace show     → show current workspace directory
+/claude workspace set ~/path → set workspace directory
+<chat normally>            → all messages go to Claude SDK with memory
+/claude quit               → exit back to normal agent mode
+```
+
+**Workspace Management:**
+
+The workspace directory determines where Claude SDK operates (reads files, executes commands, loads skills):
+
+```bash
+# Show current workspace
+/claude workspace show
+
+# Set workspace to a specific directory
+/claude workspace set ~/my-project
+
+# Set workspace with spaces in path
+/claude workspace set ~/My Documents/Project
+
+# Claude SDK will use the new workspace immediately
+# The session is automatically restarted with the new configuration
 ```
 
 **How it works:**
 1. `GatewayManager._init_claude_agent()` creates a Claude Agent SDK `Agent` instance at startup
-2. `SessionManager.get_or_create_claude_session()` maintains one `Session` per (channel, user)
-3. When in Claude mode, `_handle_claude_mode()` routes messages to `session.send_message()`
-4. No LangGraph, checkpointers, tools, or middleware — just Claude + persistent memory
+2. `SessionManager.get_or_create_claude_client()` maintains one `ClaudeSDKClient` per (channel, user)
+3. When in Claude mode, `_handle_claude_mode()` routes messages to `client.query()`
+4. No LangGraph, checkpointers, or middleware — just Claude SDK + persistent memory
 
 The SDK session state lives entirely in-memory (SDK manages its own checkpointing).
 When a user exits with `/claude quit`, their session is cleaned up.
+
+**Tool Approval (Optional):**
+
+Enable user approval for tool executions in Claude SDK mode:
+
+```bash
+LANGCLAW__AGENTS__CLAUDE_SDK_REQUIRE_APPROVAL=true
+```
+
+When enabled:
+1. Claude requests approval before executing any tool (e.g., Bash commands)
+2. User receives a formatted approval request with tool details
+3. User responds with `/approve <request_id>` or `/deny <request_id>`
+4. Tool executes only if approved within 5 minutes (otherwise times out)
+
+Example approval request:
+```
+🔐 **Tool Approval Required**
+
+**Tool:** `Bash`
+**Command:** `rm important_file.txt`
+**Description:** Delete a file
+
+Reply with:
+- `/approve abc-123` to allow
+- `/deny abc-123` to block
+```
+
+The approval system integrates with the channel layer, so users receive approval
+requests and can respond through their normal chat interface (Telegram, Slack, etc.).
 
 ## Testing
 

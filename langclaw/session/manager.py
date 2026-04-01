@@ -39,6 +39,8 @@ class SessionManager:
         self._active_agent_store: dict[str, str] = {}
         self._claude_mode_store: dict[str, bool] = {}
         self._claude_sessions: dict[str, Any] = {}  # Store Agent SDK sessions
+        self._claude_context: dict[str, dict[str, str]] = {}  # Store (chat_id, context_id) per user
+        self._claude_workspace: dict[str, str] = {}  # Store workspace path per user
         self._lock = asyncio.Lock()
 
     async def get_or_create_thread(
@@ -163,30 +165,144 @@ class SessionManager:
                     except Exception as e:
                         logger.warning(f"Failed to disconnect Claude SDK client: {e}")
 
-    async def get_or_create_claude_client(
+    async def update_claude_context(
         self,
         channel: str,
         user_id: str,
-    ) -> Any:
-        """Get or create a ClaudeSDKClient for a user.
+        chat_id: str,
+        context_id: str,
+    ) -> None:
+        """Update the context for a Claude SDK session.
+
+        This stores the current chat_id and context_id for use in approval callbacks.
+
+        Args:
+            channel:    Channel name.
+            user_id:    User identifier.
+            chat_id:    Chat/conversation identifier.
+            context_id: Context identifier.
+        """
+        key = f"{channel}:{user_id}"
+        async with self._lock:
+            self._claude_context[key] = {
+                "chat_id": chat_id,
+                "context_id": context_id,
+            }
+
+    async def get_claude_context(
+        self,
+        channel: str,
+        user_id: str,
+    ) -> dict[str, str]:
+        """Get the current context for a Claude SDK session.
 
         Args:
             channel: Channel name.
             user_id: User identifier.
 
         Returns:
+            Dict with chat_id and context_id, or defaults if not set.
+        """
+        key = f"{channel}:{user_id}"
+        async with self._lock:
+            return self._claude_context.get(key, {"chat_id": "", "context_id": "default"})
+
+    async def get_claude_workspace(
+        self,
+        channel: str,
+        user_id: str,
+    ) -> str | None:
+        """Get the current workspace path for a user's Claude session.
+
+        Args:
+            channel: Channel name.
+            user_id: User identifier.
+
+        Returns:
+            Workspace path, or None if not set.
+        """
+        key = f"{channel}:{user_id}"
+        async with self._lock:
+            return self._claude_workspace.get(key)
+
+    async def set_claude_workspace(
+        self,
+        channel: str,
+        user_id: str,
+        workspace: str,
+    ) -> None:
+        """Set the workspace path for a user's Claude session.
+
+        This will disconnect the existing Claude client so a new one
+        will be created with the updated workspace on the next interaction.
+
+        Args:
+            channel:   Channel name.
+            user_id:   User identifier.
+            workspace: Workspace directory path.
+        """
+        from pathlib import Path
+
+        # Expand ~ and resolve to absolute path
+        workspace_path = Path(workspace).expanduser().resolve()
+
+        key = f"{channel}:{user_id}"
+        async with self._lock:
+            self._claude_workspace[key] = str(workspace_path)
+
+            # Disconnect existing client so a new one will be created with new workspace
+            client = self._claude_sessions.pop(key, None)
+            if client:
+                try:
+                    await client.disconnect()
+                    logger.info(f"Disconnected Claude SDK client for {key} due to workspace change")
+                except Exception as e:
+                    logger.warning(f"Failed to disconnect Claude SDK client: {e}")
+
+    async def get_or_create_claude_client(
+        self,
+        channel: str,
+        user_id: str,
+        can_use_tool: Any | None = None,
+    ) -> Any:
+        """Get or create a ClaudeSDKClient for a user.
+
+        Args:
+            channel:      Channel name.
+            user_id:      User identifier.
+            can_use_tool: Optional callback for tool approval. Only used when
+                         creating a new client (ignored for existing clients).
+
+        Returns:
             ClaudeSDKClient instance.
         """
-        from claude_agent_sdk import ClaudeSDKClient
+        from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
 
         key = f"{channel}:{user_id}"
         async with self._lock:
             if key not in self._claude_sessions:
-                client = ClaudeSDKClient()
+                # Get workspace if set
+                workspace = self._claude_workspace.get(key)
+
+                # Build options
+                options_kwargs: dict[str, Any] = {}
+                if can_use_tool:
+                    options_kwargs["can_use_tool"] = can_use_tool
+                if workspace:
+                    options_kwargs["cwd"] = workspace
+
+                options = ClaudeAgentOptions(**options_kwargs) if options_kwargs else None
+
+                # Create client with options
+                client = ClaudeSDKClient(options=options)
+
                 # Connect the client
                 await client.connect()
                 self._claude_sessions[key] = client
-                logger.info(f"Created and connected Claude SDK client for {key}")
+                logger.info(
+                    f"Created and connected Claude SDK client for {key}"
+                    + (f" with workspace={workspace}" if workspace else "")
+                )
             return self._claude_sessions[key]
 
     def all_threads(self) -> dict[str, str]:

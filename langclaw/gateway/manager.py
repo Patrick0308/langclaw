@@ -130,6 +130,14 @@ class GatewayManager:
         # Initialize Claude Agent SDK agent for /claude mode
         self._claude_agent = self._init_claude_agent()
 
+        # Initialize approval manager for Claude SDK tool approvals
+        from langclaw.gateway.approval import ApprovalManager
+
+        self._approval_manager = ApprovalManager()
+
+        # Register approval commands
+        self._setup_approval_commands()
+
     # ------------------------------------------------------------------
     # AGENTS.md hot-reload helpers
     # ------------------------------------------------------------------
@@ -375,6 +383,53 @@ class GatewayManager:
 
         self._command_router.register("agent", _cmd_agent, "send message to a named agent")
 
+    def _setup_approval_commands(self) -> None:
+        """Register the built-in ``/approve`` and ``/deny`` commands.
+
+        These commands are used to respond to tool approval requests from
+        Claude Agent SDK when it needs permission to execute tools.
+
+        Command syntax:
+          - ``/approve <request_id>`` — approve a tool execution
+          - ``/deny <request_id>`` — deny a tool execution
+        """
+        approval_manager = self._approval_manager
+
+        async def _cmd_approve(ctx: CommandContext) -> str:
+            if not ctx.args:
+                return "Usage: /approve <request_id>"
+
+            request_id = ctx.args[0]
+            handled = await approval_manager.handle_approval_response(
+                request_id=request_id,
+                approved=True,
+                channel=ctx.channel,
+                user_id=ctx.user_id,
+            )
+
+            if handled:
+                return "✅ Tool execution approved."
+            return "❌ Approval request not found or already handled."
+
+        async def _cmd_deny(ctx: CommandContext) -> str:
+            if not ctx.args:
+                return "Usage: /deny <request_id>"
+
+            request_id = ctx.args[0]
+            handled = await approval_manager.handle_approval_response(
+                request_id=request_id,
+                approved=False,
+                channel=ctx.channel,
+                user_id=ctx.user_id,
+            )
+
+            if handled:
+                return "🚫 Tool execution denied."
+            return "❌ Approval request not found or already handled."
+
+        self._command_router.register("approve", _cmd_approve, "approve a tool execution")
+        self._command_router.register("deny", _cmd_deny, "deny a tool execution")
+
     async def _handle_claude_mode(
         self,
         msg: InboundMessage,
@@ -395,12 +450,53 @@ class GatewayManager:
             metadata: Metadata to attach to outbound messages.
         """
         from claude_agent_sdk import AssistantMessage
+        from claude_agent_sdk.types import (
+            PermissionResultAllow,
+            PermissionResultDeny,
+            ToolPermissionContext,
+        )
 
         try:
-            # Get or create Claude SDK client for this user
+            # Update context for this user's Claude session
+            await self._sessions.update_claude_context(
+                msg.channel,
+                msg.user_id,
+                msg.chat_id,
+                msg.context_id,
+            )
+
+            # Create approval callback if enabled in config
+            can_use_tool_callback = None
+            if self._config.agents.claude_sdk_require_approval:
+
+                async def can_use_tool(
+                    tool_name: str,
+                    input_data: dict[str, Any],
+                    context: ToolPermissionContext,
+                ) -> PermissionResultAllow | PermissionResultDeny:
+                    # Get current context for this user
+                    ctx = await self._sessions.get_claude_context(
+                        msg.channel,
+                        msg.user_id,
+                    )
+                    return await self._approval_manager.request_approval(
+                        tool_name=tool_name,
+                        input_data=input_data,
+                        context=context,
+                        channel=channel,
+                        channel_name=msg.channel,
+                        user_id=msg.user_id,
+                        chat_id=ctx["chat_id"],
+                        context_id=ctx["context_id"],
+                    )
+
+                can_use_tool_callback = can_use_tool
+
+            # Get or create Claude SDK client for this user with approval callback
             client = await self._sessions.get_or_create_claude_client(
                 msg.channel,
                 msg.user_id,
+                can_use_tool=can_use_tool_callback,
             )
 
             logger.info(

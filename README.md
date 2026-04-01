@@ -149,10 +149,14 @@ Langclaw includes several system commands that bypass the agent pipeline for ins
 The `/claude` command enables a lightweight conversation mode powered by the [Claude Agent SDK](https://platform.claude.com/):
 
 ```
-User: /claude
+User: /claude start
 Bot:  Entered Claude direct conversation mode (using Agent SDK).
       You can now chat directly with Claude with persistent memory.
       Use /claude quit to exit this mode.
+
+User: /claude workspace set ~/my-project
+Bot:  Workspace set to: /Users/username/my-project
+      Your Claude SDK session will be restarted with the new workspace.
 
 User: Tell me about Python
 Bot:  [Claude responds via Agent SDK — faster, stateful, no tools/middleware]
@@ -165,6 +169,15 @@ Bot:  Exited Claude direct conversation mode. Back to normal agent mode.
 - Quick conversations without needing tools
 - Lightweight interactions with automatic memory persistence
 - Testing responses without LangGraph/middleware overhead
+
+**Tool Approval (Optional):**
+
+Enable user approval for tool executions by setting:
+```bash
+LANGCLAW__AGENTS__CLAUDE_SDK_REQUIRE_APPROVAL=true
+```
+
+When enabled, Claude will request permission before executing tools (like Bash commands). Users respond with `/approve <id>` or `/deny <id>`.
 
 **Installation:**
 ```bash

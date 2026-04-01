@@ -112,6 +112,69 @@ class BaseChannel(ABC):
         """Gracefully disconnect and release resources."""
         ...
 
+    async def send_approval_request(
+        self,
+        request_id: str,
+        tool_name: str,
+        input_data: dict,
+        chat_id: str,
+        user_id: str,
+    ) -> None:
+        """
+        Send a tool approval request to the user.
+
+        Default implementation uses plain markdown format. Override this
+        to use channel-specific features (e.g., Slack Block Kit, Telegram
+        inline buttons).
+
+        Args:
+            request_id: Unique identifier for this approval request.
+            tool_name:  Name of the tool requesting approval.
+            input_data: Tool input parameters.
+            chat_id:    Chat/conversation identifier.
+            user_id:    User identifier.
+        """
+        # Default markdown format
+        lines = [
+            "🔐 **Tool Approval Required**",
+            "",
+            f"**Tool:** `{tool_name}`",
+        ]
+
+        if tool_name == "Bash":
+            command = input_data.get("command", "")
+            description = input_data.get("description", "")
+            lines.append(f"**Command:** `{command}`")
+            if description:
+                lines.append(f"**Description:** {description}")
+        else:
+            lines.append("**Input:**")
+            for key, value in input_data.items():
+                lines.append(f"- `{key}`: {value}")
+
+        lines.extend(
+            [
+                "",
+                "Reply with:",
+                f"- `/approve {request_id}` to allow",
+                f"- `/deny {request_id}` to block",
+            ]
+        )
+
+        from langclaw.bus.base import OutboundMessage
+
+        await self.send_ai_message(
+            OutboundMessage(
+                channel=self.name,
+                user_id=user_id,
+                context_id="approval",
+                chat_id=chat_id,
+                content="\n".join(lines),
+                type="system",
+                metadata={"approval_request_id": request_id},
+            )
+        )
+
     def is_enabled(self) -> bool:
         """Return True if this channel should be started by the gateway."""
         return True

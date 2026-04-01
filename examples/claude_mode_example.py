@@ -9,16 +9,47 @@ Installation:
     pip install langclaw[claude-sdk]
 
 Usage via chat interface (Telegram, Slack, WebSocket, etc.):
-    User: /claude
+    User: /claude start
     Bot:  Entered Claude direct conversation mode (using Agent SDK).
           You can now chat directly with Claude with persistent memory.
           Use /claude quit to exit this mode.
+
+    User: /claude workspace set ~/my-project
+    Bot:  Workspace set to: /Users/username/my-project
+          Your Claude SDK session will be restarted with the new workspace.
 
     User: Hello! What can you help me with?
     Bot:  [Claude responds via Agent SDK - faster, with memory, no tools]
 
     User: /claude quit
     Bot:  Exited Claude direct conversation mode. Back to normal agent mode.
+
+Workspace Management:
+    The workspace directory determines where Claude SDK operates:
+    - /claude workspace show - Display current workspace
+    - /claude workspace set ~/path - Set workspace directory
+    - Workspace paths support ~ expansion and spaces
+    - Session is automatically restarted with new workspace
+
+Tool Approval in Claude Mode:
+    Enable approval for tool executions by setting:
+        LANGCLAW__AGENTS__CLAUDE_SDK_REQUIRE_APPROVAL=true
+
+    When enabled:
+    User: Create a test file
+    Bot:  🔐 **Tool Approval Required**
+
+          **Tool:** `Bash`
+          **Command:** `touch test.txt`
+          **Description:** Create a test file
+
+          Reply with:
+          - `/approve abc-123` to allow
+          - `/deny abc-123` to block
+
+    User: /approve abc-123
+    Bot:  ✅ Tool execution approved.
+          [Claude executes the command]
 
 When to use Claude mode:
 - Quick conversations without needing tools

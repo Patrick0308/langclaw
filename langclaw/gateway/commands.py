@@ -270,7 +270,7 @@ async def _cmd_file(ctx: CommandContext) -> str:
 
 
 async def _cmd_claude(ctx: CommandContext) -> str:
-    """Handle /claude command to enter/exit Claude Agent SDK mode."""
+    """Handle claude command to enter/exit Claude Agent SDK mode."""
     router = _ACTIVE_ROUTER
     if router is None or router._session_manager is None:
         return "Claude mode is not available right now."
@@ -283,12 +283,60 @@ async def _cmd_claude(ctx: CommandContext) -> str:
         await session_mgr.set_claude_mode(ctx.channel, ctx.user_id, False)
         return "Exited Claude direct conversation mode. Back to normal agent mode."
 
-    # Enter Claude mode
-    await session_mgr.set_claude_mode(ctx.channel, ctx.user_id, True)
+    if sub == "start":
+        # Enter Claude mode
+        await session_mgr.set_claude_mode(ctx.channel, ctx.user_id, True)
+        return (
+            "Entered Claude direct conversation mode (using Agent SDK).\n"
+            "You can now chat directly with Claude with persistent memory.\n"
+            "Use claude quit to exit this mode."
+        )
+
+    if sub == "workspace":
+        # Workspace management
+        if len(ctx.args) < 2:
+            # Show current workspace
+            workspace = await session_mgr.get_claude_workspace(ctx.channel, ctx.user_id)
+            if workspace:
+                return f"Current workspace: {workspace}"
+            return "No workspace set. Using default workspace."
+
+        workspace_cmd = ctx.args[1].lower()
+        if workspace_cmd == "show":
+            workspace = await session_mgr.get_claude_workspace(ctx.channel, ctx.user_id)
+            if workspace:
+                return f"Current workspace: {workspace}"
+            return "No workspace set. Using default workspace."
+
+        if workspace_cmd == "set":
+            if len(ctx.args) < 3:
+                return "Usage: claude workspace set <path>"
+
+            workspace_path = " ".join(ctx.args[2:])  # Support paths with spaces
+            try:
+                await session_mgr.set_claude_workspace(ctx.channel, ctx.user_id, workspace_path)
+                # Get the resolved path
+                resolved = await session_mgr.get_claude_workspace(ctx.channel, ctx.user_id)
+                return (
+                    f"Workspace set to: {resolved}\n"
+                    "Your Claude SDK session will be restarted with the new workspace."
+                )
+            except Exception as e:
+                return f"Failed to set workspace: {e}"
+
+        return "Usage: claude workspace [show|set <path>]"
+
+    # Show usage/status
+    is_active = await session_mgr.get_claude_mode(ctx.channel, ctx.user_id)
+    if is_active:
+        return "Claude mode is currently active.\nUse /claude quit to exit."
     return (
-        "Entered Claude direct conversation mode (using Agent SDK).\n"
-        "You can now chat directly with Claude with persistent memory.\n"
-        "Use /claude quit to exit this mode."
+        "Claude Agent SDK mode.\n"
+        "Usage:\n"
+        "  claude start           - Enter Claude SDK mode\n"
+        "  claude quit            - Exit Claude SDK mode\n"
+        "  claude workspace show  - Show current workspace\n"
+        "  claude workspace set <path> - Set workspace directory"
     )
 
 

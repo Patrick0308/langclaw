@@ -107,7 +107,7 @@ class SlackChannel(BaseChannel):
         try:
             auth_response = await app.client.auth_test()
             self._bot_user_id = auth_response.get("user_id")
-            logger.info(f"Slack bot connected as {self._bot_user_id}")  
+            logger.info(f"Slack bot connected as {self._bot_user_id}")
         except Exception as exc:
             logger.warning(f"Failed to fetch bot user ID: {exc}")
 
@@ -128,6 +128,53 @@ class SlackChannel(BaseChannel):
         async def handle_mention(event: dict, say: Any) -> None:
             await self._on_message(event)
 
+        # Register approval button handlers (match any action_id starting with approval_)
+        import re
+
+        @app.action(re.compile("^approval_approve_"))
+        async def handle_approve(ack: Any, action: dict, body: dict) -> None:
+            await ack()
+            request_id = action["value"].replace("approve_", "")
+            user_id = body["user"]["id"]
+            channel_id = body["channel"]["id"]
+
+            # Publish approve command to bus
+            if self._bus and self._command_router:
+                from langclaw.bus.base import InboundMessage
+
+                await self._bus.publish(
+                    InboundMessage(
+                        channel="slack",
+                        user_id=user_id,
+                        chat_id=channel_id,
+                        context_id="approval",
+                        content=f"/approve {request_id}",
+                        origin="user",
+                    )
+                )
+
+        @app.action(re.compile("^approval_deny_"))
+        async def handle_deny(ack: Any, action: dict, body: dict) -> None:
+            await ack()
+            request_id = action["value"].replace("deny_", "")
+            user_id = body["user"]["id"]
+            channel_id = body["channel"]["id"]
+
+            # Publish deny command to bus
+            if self._bus and self._command_router:
+                from langclaw.bus.base import InboundMessage
+
+                await self._bus.publish(
+                    InboundMessage(
+                        channel="slack",
+                        user_id=user_id,
+                        chat_id=channel_id,
+                        context_id="approval",
+                        content=f"/deny {request_id}",
+                        origin="user",
+                    )
+                )
+
         # Register slash commands if command router exists
         if self._command_router:
             for entry in self._command_router.list_commands():
@@ -135,7 +182,8 @@ class SlackChannel(BaseChannel):
 
         logger.info(
             f"SlackChannel starting… "
-            f"(reaction_feedback={'enabled' if self._config.reaction_feedback_enabled else 'disabled'})"
+            f"(reaction_feedback="
+            f"{'enabled' if self._config.reaction_feedback_enabled else 'disabled'})"
         )
 
         # Start socket mode handler
@@ -224,6 +272,113 @@ class SlackChannel(BaseChannel):
         if self._config.reaction_feedback_enabled:
             await self._swap_reaction(msg.context_id)
 
+    async def send_approval_request(
+        self,
+        request_id: str,
+        tool_name: str,
+        input_data: dict,
+        chat_id: str,
+        user_id: str,
+    ) -> None:
+        """Send a tool approval request using Slack Block Kit."""
+        if self._app is None:
+            return
+
+        # Build command display text
+        if tool_name == "Bash":
+            command = input_data.get("command", "")
+            description = input_data.get("description", "")
+            tool_info = f"`{command}`"
+            if description:
+                tool_info += f"\n_{description}_"
+        else:
+            # Generic tool input display
+            tool_info_parts = [f"*{key}:* `{value}`" for key, value in input_data.items()]
+            tool_info = "\n".join(tool_info_parts) if tool_info_parts else "_No input parameters_"
+
+        # Fallback text for notifications
+        fallback_text = f"🔐 Tool approval required: {tool_name}"
+
+        # Slack Block Kit format
+        blocks = [
+            {
+                "type": "header",
+                "text": {
+                    "type": "plain_text",
+                    "text": "🔐 Tool Approval Required",
+                    "emoji": True,
+                },
+            },
+            {"type": "divider"},
+            {
+                "type": "section",
+                "fields": [
+                    {"type": "mrkdwn", "text": f"*Tool:*\n`{tool_name}`"},
+                    {"type": "mrkdwn", "text": f"*Request ID:*\n`{request_id[:8]}...`"},
+                ],
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*Details:*\n{tool_info}",
+                },
+            },
+            {"type": "divider"},
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "Choose an action:",
+                },
+            },
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {
+                            "type": "plain_text",
+                            "text": "✅ Approve",
+                            "emoji": True,
+                        },
+                        "style": "primary",
+                        "value": f"approve_{request_id}",
+                        "action_id": f"approval_approve_{request_id}",
+                    },
+                    {
+                        "type": "button",
+                        "text": {
+                            "type": "plain_text",
+                            "text": "🚫 Deny",
+                            "emoji": True,
+                        },
+                        "style": "danger",
+                        "value": f"deny_{request_id}",
+                        "action_id": f"approval_deny_{request_id}",
+                    },
+                ],
+            },
+            {
+                "type": "context",
+                "elements": [
+                    {
+                        "type": "mrkdwn",
+                        "text": f"Or reply with `/approve {request_id}` or `/deny {request_id}`",
+                    }
+                ],
+            },
+        ]
+
+        try:
+            await self._app.client.chat_postMessage(
+                channel=chat_id,
+                text=fallback_text,
+                blocks=blocks,
+            )
+        except Exception as exc:
+            logger.error(f"Failed to send approval request to Slack: {exc}")
+
     # ------------------------------------------------------------------
     # Sending helpers
     # ------------------------------------------------------------------
@@ -281,7 +436,7 @@ class SlackChannel(BaseChannel):
 
             # Log actionable errors
             if slack_error == "missing_scope":
-                logger.warning(f"Reaction failed: missing 'reactions:write' scope")
+                logger.warning("Reaction failed: missing 'reactions:write' scope")
             else:
                 logger.debug(f"Failed to add reaction '{emoji}': {slack_error or exc}")
 
@@ -312,7 +467,7 @@ class SlackChannel(BaseChannel):
 
             # Log actionable errors
             if slack_error == "missing_scope":
-                logger.warning(f"Reaction failed: missing 'reactions:write' scope")
+                logger.warning("Reaction failed: missing 'reactions:write' scope")
             else:
                 logger.debug(f"Failed to remove reaction '{emoji}': {slack_error or exc}")
 
@@ -395,9 +550,10 @@ class SlackChannel(BaseChannel):
 
         # -- Command handling (/start, /help, /reset, /cron) --
         stripped = text.strip()
-        if stripped.startswith("/"):
+        if stripped.startswith("/") or stripped.startswith("!"):
             parts = stripped.split()
             cmd = parts[0].lstrip("/").lower() if parts else ""
+            cmd = parts[0].lstrip("!").lower() if parts else ""
             args = parts[1:] if len(parts) > 1 else []
 
             if cmd and self._command_router is not None:
