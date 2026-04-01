@@ -134,9 +134,13 @@ class SlackChannel(BaseChannel):
         @app.action(re.compile("^approval_approve_"))
         async def handle_approve(ack: Any, action: dict, body: dict) -> None:
             await ack()
+            logger.info(f"Approval button action triggered | action={action} | body_user={body.get('user', {}).get('id')}")
+
             request_id = action["value"].replace("approve_", "")
             user_id = body["user"]["id"]
             channel_id = body["channel"]["id"]
+
+            logger.info(f"Processing approval | request_id={request_id} | user={user_id} | channel={channel_id}")
 
             # Directly dispatch approve command (don't send to bus to avoid Claude mode routing)
             if self._command_router:
@@ -157,13 +161,19 @@ class SlackChannel(BaseChannel):
                     await self._send_text(channel_id, response)
                 except Exception as exc:
                     logger.error(f"Failed to send approval response: {exc}")
+            else:
+                logger.error("Approval button clicked but command_router not available!")
 
         @app.action(re.compile("^approval_deny_"))
         async def handle_deny(ack: Any, action: dict, body: dict) -> None:
             await ack()
+            logger.info(f"Deny button action triggered | action={action} | body_user={body.get('user', {}).get('id')}")
+
             request_id = action["value"].replace("deny_", "")
             user_id = body["user"]["id"]
             channel_id = body["channel"]["id"]
+
+            logger.info(f"Processing denial | request_id={request_id} | user={user_id} | channel={channel_id}")
 
             # Directly dispatch deny command (don't send to bus to avoid Claude mode routing)
             if self._command_router:
@@ -184,6 +194,8 @@ class SlackChannel(BaseChannel):
                     await self._send_text(channel_id, response)
                 except Exception as exc:
                     logger.error(f"Failed to send deny response: {exc}")
+            else:
+                logger.error("Deny button clicked but command_router not available!")
 
         # Register slash commands if command router exists
         if self._command_router:
@@ -375,7 +387,7 @@ class SlackChannel(BaseChannel):
                 "elements": [
                     {
                         "type": "mrkdwn",
-                        "text": f"Or reply with `/approve {request_id}` or `/deny {request_id}`",
+                        "text": f"💡 Tip: Use `!approve {request_id}` or `!deny {request_id}` (all `/` commands support `!` prefix)",
                     }
                 ],
             },
