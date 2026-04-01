@@ -41,6 +41,7 @@ class SessionManager:
         self._claude_sessions: dict[str, Any] = {}  # Store Agent SDK sessions
         self._claude_context: dict[str, dict[str, str]] = {}  # Store (chat_id, context_id) per user
         self._claude_workspace: dict[str, str] = {}  # Store workspace path per user
+        self._claude_has_approval: dict[str, bool] = {}  # Track if client has approval callback
         self._lock = asyncio.Lock()
 
     async def get_or_create_thread(
@@ -158,6 +159,7 @@ class SessionManager:
                 self._claude_mode_store.pop(key, None)
                 # Disconnect and cleanup the client when exiting
                 client = self._claude_sessions.pop(key, None)
+                self._claude_has_approval.pop(key, None)
                 if client:
                     try:
                         await client.disconnect()
@@ -267,11 +269,14 @@ class SessionManager:
     ) -> Any:
         """Get or create a ClaudeSDKClient for a user.
 
+        If the approval callback setting changes (from None to callback or vice versa),
+        the existing client will be disconnected and a new one created with the
+        updated configuration.
+
         Args:
             channel:      Channel name.
             user_id:      User identifier.
-            can_use_tool: Optional callback for tool approval. Only used when
-                         creating a new client (ignored for existing clients).
+            can_use_tool: Optional callback for tool approval.
 
         Returns:
             ClaudeSDKClient instance.
@@ -280,6 +285,22 @@ class SessionManager:
 
         key = f"{channel}:{user_id}"
         async with self._lock:
+            # Check if approval setting changed
+            has_approval = can_use_tool is not None
+            existing_has_approval = self._claude_has_approval.get(key, False)
+
+            # If client exists and approval setting changed, recreate it
+            if key in self._claude_sessions and has_approval != existing_has_approval:
+                client = self._claude_sessions.pop(key)
+                self._claude_has_approval.pop(key, None)
+                try:
+                    await client.disconnect()
+                    logger.info(
+                        f"Disconnected Claude SDK client for {key} due to approval setting change"
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to disconnect Claude SDK client: {e}")
+
             if key not in self._claude_sessions:
                 # Get workspace if set
                 workspace = self._claude_workspace.get(key)
@@ -299,9 +320,14 @@ class SessionManager:
                 # Connect the client
                 await client.connect()
                 self._claude_sessions[key] = client
+                self._claude_has_approval[key] = has_approval
+
+                approval_msg = " with approval callback" if has_approval else ""
+                workspace_msg = f" workspace={workspace}" if workspace else ""
                 logger.info(
                     f"Created and connected Claude SDK client for {key}"
-                    + (f" with workspace={workspace}" if workspace else "")
+                    + approval_msg
+                    + workspace_msg
                 )
             return self._claude_sessions[key]
 

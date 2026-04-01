@@ -474,21 +474,44 @@ class GatewayManager:
                     input_data: dict[str, Any],
                     context: ToolPermissionContext,
                 ) -> PermissionResultAllow | PermissionResultDeny:
-                    # Get current context for this user
-                    ctx = await self._sessions.get_claude_context(
-                        msg.channel,
-                        msg.user_id,
-                    )
-                    return await self._approval_manager.request_approval(
-                        tool_name=tool_name,
-                        input_data=input_data,
-                        context=context,
-                        channel=channel,
-                        channel_name=msg.channel,
-                        user_id=msg.user_id,
-                        chat_id=ctx["chat_id"],
-                        context_id=ctx["context_id"],
-                    )
+                    try:
+                        logger.info(
+                            f"Tool approval required | tool={tool_name} | "
+                            f"user={msg.user_id} | channel={msg.channel}"
+                        )
+                        # Get current context for this user
+                        ctx = await self._sessions.get_claude_context(
+                            msg.channel,
+                            msg.user_id,
+                        )
+                        logger.info(
+                            f"Claude context retrieved | chat_id={ctx.get('chat_id')} | "
+                            f"context_id={ctx.get('context_id')}"
+                        )
+                        result = await self._approval_manager.request_approval(
+                            tool_name=tool_name,
+                            input_data=input_data,
+                            _context=context,  # Note: parameter name is _context
+                            channel=channel,
+                            channel_name=msg.channel,
+                            user_id=msg.user_id,
+                            chat_id=ctx["chat_id"],
+                            context_id=ctx["context_id"],
+                        )
+                        logger.info(
+                            f"Tool approval result | tool={tool_name} | "
+                            f"approved={isinstance(result, PermissionResultAllow)}"
+                        )
+                        return result
+                    except Exception as e:
+                        logger.error(
+                            f"Error in approval callback | tool={tool_name} | error={e!r}",
+                            exc_info=True,
+                        )
+                        # Deny on error - PermissionResultDeny already imported in outer scope
+                        deny_result = PermissionResultDeny(message=f"Approval failed: {e}")
+                        logger.info(f"Returning DENY due to error | tool={tool_name}")
+                        return deny_result
 
                 can_use_tool_callback = can_use_tool
 
@@ -500,7 +523,8 @@ class GatewayManager:
             )
 
             logger.info(
-                f"Claude SDK mode | channel={msg.channel} user={msg.user_id} | {msg.content[:100]}"
+                f"Claude SDK mode | channel={msg.channel} user={msg.user_id} | "
+                f"approval_enabled={can_use_tool_callback is not None} | {msg.content[:100]}"
             )
 
             # Send message to Claude via SDK

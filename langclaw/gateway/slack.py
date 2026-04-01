@@ -138,20 +138,25 @@ class SlackChannel(BaseChannel):
             user_id = body["user"]["id"]
             channel_id = body["channel"]["id"]
 
-            # Publish approve command to bus
-            if self._bus and self._command_router:
-                from langclaw.bus.base import InboundMessage
+            # Directly dispatch approve command (don't send to bus to avoid Claude mode routing)
+            if self._command_router:
+                from langclaw.gateway.commands import CommandContext
 
-                await self._bus.publish(
-                    InboundMessage(
-                        channel="slack",
-                        user_id=user_id,
-                        chat_id=channel_id,
-                        context_id="approval",
-                        content=f"/approve {request_id}",
-                        origin="user",
-                    )
+                ctx = CommandContext(
+                    channel="slack",
+                    user_id=user_id,
+                    chat_id=channel_id,
+                    context_id="approval",
+                    args=[request_id],
                 )
+                response = await self._command_router.dispatch("approve", ctx)
+                logger.info(f"Approval button clicked | request_id={request_id} | user={user_id}")
+
+                # Send response back to Slack
+                try:
+                    await self._send_text(channel_id, response)
+                except Exception as exc:
+                    logger.error(f"Failed to send approval response: {exc}")
 
         @app.action(re.compile("^approval_deny_"))
         async def handle_deny(ack: Any, action: dict, body: dict) -> None:
@@ -160,20 +165,25 @@ class SlackChannel(BaseChannel):
             user_id = body["user"]["id"]
             channel_id = body["channel"]["id"]
 
-            # Publish deny command to bus
-            if self._bus and self._command_router:
-                from langclaw.bus.base import InboundMessage
+            # Directly dispatch deny command (don't send to bus to avoid Claude mode routing)
+            if self._command_router:
+                from langclaw.gateway.commands import CommandContext
 
-                await self._bus.publish(
-                    InboundMessage(
-                        channel="slack",
-                        user_id=user_id,
-                        chat_id=channel_id,
-                        context_id="approval",
-                        content=f"/deny {request_id}",
-                        origin="user",
-                    )
+                ctx = CommandContext(
+                    channel="slack",
+                    user_id=user_id,
+                    chat_id=channel_id,
+                    context_id="approval",
+                    args=[request_id],
                 )
+                response = await self._command_router.dispatch("deny", ctx)
+                logger.info(f"Deny button clicked | request_id={request_id} | user={user_id}")
+
+                # Send response back to Slack
+                try:
+                    await self._send_text(channel_id, response)
+                except Exception as exc:
+                    logger.error(f"Failed to send deny response: {exc}")
 
         # Register slash commands if command router exists
         if self._command_router:
@@ -282,7 +292,8 @@ class SlackChannel(BaseChannel):
     ) -> None:
         """Send a tool approval request using Slack Block Kit."""
         if self._app is None:
-            return
+            logger.error("Cannot send approval request: Slack app not initialized")
+            raise RuntimeError("Slack app not initialized")
 
         # Build command display text
         if tool_name == "Bash":

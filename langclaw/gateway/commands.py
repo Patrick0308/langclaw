@@ -333,10 +333,10 @@ async def _cmd_claude(ctx: CommandContext) -> str:
     return (
         "Claude Agent SDK mode.\n"
         "Usage:\n"
-        "  claude start           - Enter Claude SDK mode\n"
-        "  claude quit            - Exit Claude SDK mode\n"
-        "  claude workspace show  - Show current workspace\n"
-        "  claude workspace set <path> - Set workspace directory"
+        "  /claude start           - Enter Claude SDK mode\n"
+        "  /claude quit            - Exit Claude SDK mode\n"
+        "  /claude workspace show  - Show current workspace\n"
+        "  /claude workspace set <path> - Set workspace directory"
     )
 
 

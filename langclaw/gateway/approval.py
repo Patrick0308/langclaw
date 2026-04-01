@@ -82,6 +82,11 @@ class ApprovalManager:
         """
         from claude_agent_sdk.types import PermissionResultDeny
 
+        logger.info(
+            f"ApprovalManager.request_approval called | tool={tool_name} | "
+            f"channel={channel_name} | user={user_id} | chat={chat_id}"
+        )
+
         # Create unique request ID
         request_id = str(uuid.uuid4())
 
@@ -103,15 +108,27 @@ class ApprovalManager:
 
         try:
             # Send approval request via channel
-            await channel.send_approval_request(
-                request_id=request_id,
-                tool_name=tool_name,
-                input_data=input_data,
-                chat_id=chat_id,
-                user_id=user_id,
+            logger.info(
+                f"Sending approval request | request_id={request_id} | tool={tool_name} | "
+                f"channel={channel_name} | user={user_id} | chat={chat_id}"
             )
 
-            logger.info(f"Sent approval request {request_id} | tool={tool_name} | user={user_id}")
+            try:
+                await channel.send_approval_request(
+                    request_id=request_id,
+                    tool_name=tool_name,
+                    input_data=input_data,
+                    chat_id=chat_id,
+                    user_id=user_id,
+                )
+                logger.info(f"Approval request sent | request_id={request_id} | tool={tool_name}")
+            except Exception as e:
+                logger.error(
+                    f"Failed to send approval request | request_id={request_id} | "
+                    f"tool={tool_name} | error={e!r}",
+                    exc_info=True,
+                )
+                return PermissionResultDeny(message=f"Failed to send approval request: {e}")
 
             # Wait for user response (with timeout)
             try:
