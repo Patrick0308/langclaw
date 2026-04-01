@@ -218,7 +218,7 @@ logger.error(f"Failed to connect: {exc}")
 
 ### Commands vs Tools
 
-- **Commands** (`/start`, `/reset`, `/help`, `/agent`): Fast system ops, bypass bus and LLM entirely
+- **Commands** (`/start`, `/reset`, `/help`, `/agent`, `/claude`): Fast system ops, bypass bus and LLM entirely
 - **Tools**: LLM-invoked functions, go through full middleware pipeline
 
 Don't implement user-facing quick actions as tools — use `@app.command()`.
@@ -226,6 +226,37 @@ Don't implement user-facing quick actions as tools — use `@app.command()`.
 `/agent` is registered automatically by `GatewayManager._setup_agent_command()` as a closure
 when at least one named agent exists. It calls `SessionManager.set_active_agent()` for persistent
 switches and publishes directly to the bus for one-off messages.
+
+### Claude Agent SDK Mode (`/claude`)
+
+The `/claude` command lets users bypass the LangGraph framework and interact directly with Claude
+via the **Claude Agent SDK**, which provides:
+- Stateful conversations with automatic memory persistence
+- Simpler interaction model (no tools, middleware, or LangGraph)
+- Ideal for lightweight, conversational use cases
+
+**Installation:**
+```bash
+uv add langclaw[claude-sdk]
+# or
+pip install claude-agent-sdk
+```
+
+**Usage:**
+```
+/claude              → enter Claude SDK mode (persistent session)
+<chat normally>      → all messages go to Claude SDK with memory
+/claude quit         → exit back to normal agent mode
+```
+
+**How it works:**
+1. `GatewayManager._init_claude_agent()` creates a Claude Agent SDK `Agent` instance at startup
+2. `SessionManager.get_or_create_claude_session()` maintains one `Session` per (channel, user)
+3. When in Claude mode, `_handle_claude_mode()` routes messages to `session.send_message()`
+4. No LangGraph, checkpointers, tools, or middleware — just Claude + persistent memory
+
+The SDK session state lives entirely in-memory (SDK manages its own checkpointing).
+When a user exits with `/claude quit`, their session is cleaned up.
 
 ## Testing
 

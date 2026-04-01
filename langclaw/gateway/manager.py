@@ -127,6 +127,9 @@ class GatewayManager:
         # Phase 2 hook point — auto-routing resolver (not yet wired):
         # self._agent_resolver: Callable[[InboundMessage], Awaitable[str | None]] | None = None
 
+        # Initialize Claude Agent SDK agent for /claude mode
+        self._claude_agent = self._init_claude_agent()
+
     # ------------------------------------------------------------------
     # AGENTS.md hot-reload helpers
     # ------------------------------------------------------------------
@@ -292,6 +295,32 @@ class GatewayManager:
                 self._agents_md_hashes[agent_name] = new_hash
                 return current
 
+    def _init_claude_agent(self) -> Any:
+        """Initialize Claude Agent SDK agent for direct conversation mode.
+
+        Returns:
+            A Claude Agent SDK Agent instance, or None if SDK is not available.
+        """
+        try:
+            from claude_agent_sdk import Agent
+
+            agent = Agent(
+                name="claude-assistant",
+                system_prompt=(
+                    "You are Claude, a helpful AI assistant. "
+                    "Provide clear, concise, and accurate responses."
+                ),
+            )
+            logger.info("Claude Agent SDK initialized for /claude mode")
+            return agent
+        except ImportError:
+            logger.warning(
+                "claude-agent-sdk not installed. "
+                "/claude command will not be available. "
+                "Install with: pip install claude-agent-sdk"
+            )
+            return None
+
     def _setup_agent_command(self) -> None:
         """Register the built-in ``/agent`` command as a closure.
 
@@ -352,6 +381,88 @@ class GatewayManager:
             return ""  # Empty response — agent will reply directly
 
         self._command_router.register("agent", _cmd_agent, "send message to a named agent")
+
+    async def _handle_claude_mode(
+        self,
+        msg: InboundMessage,
+        channel: BaseChannel,
+        metadata: dict[str, Any],
+    ) -> None:
+        """Handle messages using Claude Agent SDK for direct conversation.
+
+        In this mode, messages use the Claude Agent SDK which provides:
+        - Persistent conversation memory across messages
+        - Stateful sessions managed by the SDK
+        - Direct Claude API access without LangGraph overhead
+
+        Args:
+            msg:      The inbound message to handle.
+            channel:  The channel to send responses to.
+            metadata: Metadata to attach to outbound messages.
+        """
+        try:
+            # Get or create Claude SDK session for this user
+            session = await self._sessions.get_or_create_claude_session(
+                msg.channel,
+                msg.user_id,
+                self._claude_agent,
+            )
+
+            logger.info(
+                f"Claude SDK mode | channel={msg.channel} user={msg.user_id} | {msg.content[:100]}"
+            )
+
+            # Send message to Claude SDK and get response
+            # The session automatically maintains conversation history
+            response = await session.send_message(msg.content)
+
+            # Extract response content
+            response_text = response.content if hasattr(response, "content") else str(response)
+
+            # Send response back to channel
+            if response_text:
+                await channel.send(
+                    OutboundMessage(
+                        channel=msg.channel,
+                        user_id=msg.user_id,
+                        context_id=msg.context_id,
+                        chat_id=msg.chat_id,
+                        content=response_text,
+                        type="ai",
+                        metadata={**metadata, "claude_mode": True},
+                    )
+                )
+                logger.info(f"Claude SDK response sent | {len(response_text)} chars")
+
+        except ImportError:
+            logger.error(
+                "claude-agent-sdk not installed. Install with: pip install claude-agent-sdk"
+            )
+            await channel.send(
+                OutboundMessage(
+                    channel=msg.channel,
+                    user_id=msg.user_id,
+                    context_id=msg.context_id,
+                    chat_id=msg.chat_id,
+                    content=(
+                        "Claude Agent SDK is not installed.\n"
+                        "Please install it with: pip install claude-agent-sdk"
+                    ),
+                    type="ai",
+                )
+            )
+        except Exception:
+            logger.exception(f"Error in Claude SDK mode for {msg.channel}/{msg.user_id}")
+            await channel.send(
+                OutboundMessage(
+                    channel=msg.channel,
+                    user_id=msg.user_id,
+                    context_id=msg.context_id,
+                    chat_id=msg.chat_id,
+                    content="Sorry, something went wrong in Claude mode. Please try again.",
+                    type="ai",
+                )
+            )
 
     async def _resolve_agent_name(self, msg: InboundMessage) -> str:
         """Determine which named agent should handle this message.
@@ -646,6 +757,12 @@ class GatewayManager:
                     metadata=out_meta,
                 )
             )
+            return
+
+        # Check if user is in Claude Agent SDK mode
+        is_claude_mode = await self._sessions.get_claude_mode(msg.channel, msg.user_id)
+        if is_claude_mode and self._claude_agent is not None:
+            await self._handle_claude_mode(msg, channel, meta)
             return
 
         # Message for main agent — resolve which agent handles this session.

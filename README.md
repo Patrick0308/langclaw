@@ -132,6 +132,47 @@ Channel (Telegram / Discord / Slack / WebSocket)
 
 Cron jobs publish `InboundMessage` to the same bus, flowing through the identical pipeline. Commands bypass everything — they're fast system operations handled before the bus.
 
+## Built-in Commands
+
+Langclaw includes several system commands that bypass the agent pipeline for instant responses:
+
+- **`/start`** — Welcome message
+- **`/reset`** — Clear conversation history
+- **`/help`** — List available commands
+- **`/claude`** — Enter Claude Agent SDK mode (direct conversation with persistent memory)
+  - Use `/claude quit` to exit back to normal agent mode
+- **`/agent`** — Switch between named agents (when multi-agent routing is enabled)
+- **`/cron`** — List or remove scheduled jobs
+
+### Claude Agent SDK Mode
+
+The `/claude` command enables a lightweight conversation mode powered by the [Claude Agent SDK](https://platform.claude.com/):
+
+```
+User: /claude
+Bot:  Entered Claude direct conversation mode (using Agent SDK).
+      You can now chat directly with Claude with persistent memory.
+      Use /claude quit to exit this mode.
+
+User: Tell me about Python
+Bot:  [Claude responds via Agent SDK — faster, stateful, no tools/middleware]
+
+User: /claude quit
+Bot:  Exited Claude direct conversation mode. Back to normal agent mode.
+```
+
+**When to use Claude mode:**
+- Quick conversations without needing tools
+- Lightweight interactions with automatic memory persistence
+- Testing responses without LangGraph/middleware overhead
+
+**Installation:**
+```bash
+uv add "langclaw[claude-sdk]"
+```
+
+See [`examples/claude_mode_example.py`](examples/claude_mode_example.py) for a complete example.
+
 ## Installation
 
 ```bash
@@ -147,7 +188,7 @@ uv add "langclaw[telegram,postgres,rabbitmq]"
 uv add "langclaw[all]"
 ```
 
-Available extras: `telegram`, `discord`, `slack`, `websocket`, `postgres`, `rabbitmq`, `kafka`, `mcp`, `search`, `gmail`.
+Available extras: `telegram`, `discord`, `slack`, `websocket`, `postgres`, `rabbitmq`, `kafka`, `mcp`, `search`, `gmail`, `claude-sdk`.
 
 ## Quick Start
 

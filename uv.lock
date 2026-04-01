@@ -614,6 +614,23 @@ wheels = [
 ]
 
 [[package]]
+name = "claude-agent-sdk"
+version = "0.1.53"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "mcp" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/40/0d/00ed06ddda253b7d5ceda95e54a4f2619b84910ed275b80a6ca5a5b098cb/claude_agent_sdk-0.1.53.tar.gz", hash = "sha256:65d7817099bb02b16df471bab4212c13b63fbc14c514048ea7b3b4137e9f1c38", size = 116626, upload-time = "2026-03-31T00:46:08.829Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/29/e6/73db231fb9cb9ceaadf8c25a99c415fb86589f6b65bee68fa834418347f9/claude_agent_sdk-0.1.53-py3-none-macosx_11_0_arm64.whl", hash = "sha256:617e87dc8f47d719027d9200acf9234a3f042124f0f584b1bbc12fc9dbb95af8", size = 57761861, upload-time = "2026-03-31T00:46:11.715Z" },
+    { url = "https://files.pythonhosted.org/packages/72/ff/ce34ebac6216f995a8fa125c9550984131c8d69f8c95071fc151dbe889df/claude_agent_sdk-0.1.53-py3-none-macosx_11_0_x86_64.whl", hash = "sha256:f60e573429b7f576482048c288e724ad80aa98959bf4a63a14ee22f9986c2186", size = 59533487, upload-time = "2026-03-31T00:46:15.088Z" },
+    { url = "https://files.pythonhosted.org/packages/a7/68/1efb9c5435cf1680d2ce8899726ef47126e7960a1caace7443dfc52f3bb9/claude_agent_sdk-0.1.53-py3-none-manylinux_2_17_aarch64.whl", hash = "sha256:76ddc69f7f0b10da2ab295af358ee1f56a3cda2bb44c5d3f844796ae95ebf5c2", size = 71147863, upload-time = "2026-03-31T00:46:18.183Z" },
+    { url = "https://files.pythonhosted.org/packages/3a/a3/24fb807f6e78bd5207716d4a1a4406826113176a2df3a0797a744338ace8/claude_agent_sdk-0.1.53-py3-none-manylinux_2_17_x86_64.whl", hash = "sha256:52b270c18c1cdfeffb598ad54371c85064374cd900c4c643b2ef0ca9520e114a", size = 71285020, upload-time = "2026-03-31T00:46:21.72Z" },
+    { url = "https://files.pythonhosted.org/packages/b4/ff/d1a73d120c9cda1dbb11fcb9a410adbf5a3c2f0e90c9f09e8fc13218724d/claude_agent_sdk-0.1.53-py3-none-win_amd64.whl", hash = "sha256:ee9fa93acb813053b98fe0a33b4bff60694c98f6ac4eb10c8ca590e69f9b2eb3", size = 73506317, upload-time = "2026-03-31T00:46:25.289Z" },
+]
+
+[[package]]
 name = "click"
 version = "8.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1736,6 +1753,7 @@ all = [
     { name = "aio-pika" },
     { name = "aiohttp" },
     { name = "aiokafka" },
+    { name = "claude-agent-sdk" },
     { name = "crawl4ai" },
     { name = "discord-py" },
     { name = "duckduckgo-search" },
@@ -1748,8 +1766,12 @@ all = [
     { name = "psycopg", extra = ["binary", "pool"] },
     { name = "python-telegram-bot" },
     { name = "slack-bolt" },
+    { name = "slackify-markdown" },
     { name = "tavily-python" },
     { name = "websockets" },
+]
+claude-sdk = [
+    { name = "claude-agent-sdk" },
 ]
 dev = [
     { name = "pytest" },
@@ -1786,6 +1808,7 @@ search = [
 slack = [
     { name = "aiohttp" },
     { name = "slack-bolt" },
+    { name = "slackify-markdown" },
 ]
 telegram = [
     { name = "python-telegram-bot" },
@@ -1813,6 +1836,7 @@ requires-dist = [
     { name = "aiokafka", marker = "extra == 'kafka'", specifier = ">=0.10" },
     { name = "anyio", specifier = ">=4.0" },
     { name = "apscheduler", specifier = ">=4.0.0a1" },
+    { name = "claude-agent-sdk", marker = "extra == 'claude-sdk'", specifier = ">=0.1" },
     { name = "crawl4ai", marker = "extra == 'search'", specifier = ">=0.4" },
     { name = "deepagents", specifier = ">=0.1" },
     { name = "discord-py", marker = "extra == 'discord'", specifier = ">=2" },
@@ -1827,7 +1851,7 @@ requires-dist = [
     { name = "langchain-core", specifier = ">=0.3" },
     { name = "langchain-mcp-adapters", marker = "extra == 'mcp'", specifier = ">=0.1" },
     { name = "langchain-openai", specifier = ">=1.1.10" },
-    { name = "langclaw", extras = ["telegram", "discord", "websocket", "slack", "postgres", "rabbitmq", "kafka", "mcp", "search", "gmail"], marker = "extra == 'all'" },
+    { name = "langclaw", extras = ["telegram", "discord", "websocket", "slack", "postgres", "rabbitmq", "kafka", "mcp", "search", "gmail", "claude-sdk"], marker = "extra == 'all'" },
     { name = "langgraph", specifier = ">=0.4" },
     { name = "langgraph-checkpoint-postgres", marker = "extra == 'postgres'" },
     { name = "langgraph-checkpoint-sqlite" },
@@ -1840,12 +1864,13 @@ requires-dist = [
     { name = "python-telegram-bot", marker = "extra == 'telegram'", specifier = ">=21" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
     { name = "slack-bolt", marker = "extra == 'slack'", specifier = ">=1.18" },
+    { name = "slackify-markdown", marker = "extra == 'slack'", specifier = ">=0.2.0" },
     { name = "tavily-python", marker = "extra == 'search'", specifier = ">=0.3" },
     { name = "tenacity", specifier = ">=9.1.4" },
     { name = "typer", specifier = ">=0.12" },
     { name = "websockets", marker = "extra == 'websocket'", specifier = ">=14" },
 ]
-provides-extras = ["telegram", "discord", "websocket", "slack", "postgres", "rabbitmq", "kafka", "mcp", "gmail", "search", "dev", "all"]
+provides-extras = ["telegram", "discord", "websocket", "slack", "postgres", "rabbitmq", "kafka", "mcp", "gmail", "search", "claude-sdk", "dev", "all"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -3872,6 +3897,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/22/35/fc009118a13187dd9731657c60138e5a7c2dea88681a7f04dc406af5da7d/slack_sdk-3.41.0.tar.gz", hash = "sha256:eb61eb12a65bebeca9cb5d36b3f799e836ed2be21b456d15df2627cfe34076ca", size = 250568, upload-time = "2026-03-12T16:10:11.381Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a1/df/2e4be347ff98281b505cc0ccf141408cdd25eb5ca9f3830deb361b2472d3/slack_sdk-3.41.0-py2.py3-none-any.whl", hash = "sha256:bb18dcdfff1413ec448e759cf807ec3324090993d8ab9111c74081623b692a89", size = 313885, upload-time = "2026-03-12T16:10:09.811Z" },
+]
+
+[[package]]
+name = "slackify-markdown"
+version = "0.2.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "markdown-it-py" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/53/c7/bf20dba3e51af1e27c0f2ee94cc3f4c0716fbbda3fe3aa087f8318c04af2/slackify_markdown-0.2.2.tar.gz", hash = "sha256:f24185fca7775edc547ba5aca560af603e8af7cab1262a2e0a421cbe3831fd0d", size = 8662, upload-time = "2026-03-02T16:35:25.294Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b3/12/ef80548ce2a87cb239909f615cfdef224d165c3d6c2cdf226c833fa1784e/slackify_markdown-0.2.2-py3-none-any.whl", hash = "sha256:ff63c41004c39135db17f682b0d0864268f29132992ea987063150d8162b9e70", size = 6670, upload-time = "2026-03-02T16:35:24.302Z" },
 ]
 
 [[package]]

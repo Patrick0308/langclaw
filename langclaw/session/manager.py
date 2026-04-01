@@ -15,9 +15,12 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
+
+if TYPE_CHECKING:
+    pass
 
 
 class SessionManager:
@@ -34,6 +37,8 @@ class SessionManager:
     def __init__(self) -> None:
         self._store: dict[str, str] = {}
         self._active_agent_store: dict[str, str] = {}
+        self._claude_mode_store: dict[str, bool] = {}
+        self._claude_sessions: dict[str, Any] = {}  # Store Agent SDK sessions
         self._lock = asyncio.Lock()
 
     async def get_or_create_thread(
@@ -124,6 +129,66 @@ class SessionManager:
                 self._active_agent_store.pop(key, None)
             else:
                 self._active_agent_store[key] = agent_name
+
+    async def get_claude_mode(self, channel: str, user_id: str) -> bool:
+        """Check if user is in Claude direct conversation mode.
+
+        Returns:
+            ``True`` if the user is in Claude mode, ``False`` otherwise.
+        """
+        key = f"{channel}:{user_id}"
+        async with self._lock:
+            return self._claude_mode_store.get(key, False)
+
+    async def set_claude_mode(self, channel: str, user_id: str, enabled: bool) -> None:
+        """Enable or disable Claude direct conversation mode for a user.
+
+        Args:
+            channel: Channel name (e.g. ``"telegram"``).
+            user_id: Platform-specific user identifier.
+            enabled: ``True`` to enable Claude mode, ``False`` to disable.
+        """
+        key = f"{channel}:{user_id}"
+        async with self._lock:
+            if enabled:
+                self._claude_mode_store[key] = True
+            else:
+                self._claude_mode_store.pop(key, None)
+                # Also cleanup the session when exiting
+                self._claude_sessions.pop(key, None)
+
+    async def get_or_create_claude_session(
+        self,
+        channel: str,
+        user_id: str,
+        agent_instance: Any,
+    ) -> Any:
+        """Get or create a Claude Agent SDK session for a user.
+
+        Args:
+            channel:         Channel name.
+            user_id:         User identifier.
+            agent_instance:  The Agent SDK agent instance to use.
+
+        Returns:
+            A Claude Agent SDK Session instance.
+        """
+        key = f"{channel}:{user_id}"
+        async with self._lock:
+            if key not in self._claude_sessions:
+                # Import here to avoid hard dependency
+                try:
+                    from claude_agent_sdk import Session
+
+                    self._claude_sessions[key] = Session(agent=agent_instance)
+                    logger.info(f"Created new Claude SDK session for {key}")
+                except ImportError:
+                    logger.error(
+                        "claude-agent-sdk not installed. "
+                        "Install with: pip install claude-agent-sdk"
+                    )
+                    raise
+            return self._claude_sessions[key]
 
     def all_threads(self) -> dict[str, str]:
         """Return a snapshot of all key→thread_id mappings (for diagnostics)."""

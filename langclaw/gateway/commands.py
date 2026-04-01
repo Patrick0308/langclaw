@@ -269,6 +269,29 @@ async def _cmd_file(ctx: CommandContext) -> str:
     return header + "\n".join(content_lines)
 
 
+async def _cmd_claude(ctx: CommandContext) -> str:
+    """Handle /claude command to enter/exit Claude Agent SDK mode."""
+    router = _ACTIVE_ROUTER
+    if router is None or router._session_manager is None:
+        return "Claude mode is not available right now."
+
+    session_mgr = router._session_manager
+    sub = ctx.args[0].lower() if ctx.args else ""
+
+    if sub in ("quit", "exit"):
+        # Exit Claude mode
+        await session_mgr.set_claude_mode(ctx.channel, ctx.user_id, False)
+        return "Exited Claude direct conversation mode. Back to normal agent mode."
+
+    # Enter Claude mode
+    await session_mgr.set_claude_mode(ctx.channel, ctx.user_id, True)
+    return (
+        "Entered Claude direct conversation mode (using Agent SDK).\n"
+        "You can now chat directly with Claude with persistent memory.\n"
+        "Use /claude quit to exit this mode."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Router
 # ---------------------------------------------------------------------------
@@ -304,6 +327,7 @@ class CommandRouter:
         self.register("start", _cmd_start, "say hello")
         self.register("reset", _cmd_reset, "clear conversation history")
         self.register("help", _cmd_help, "show this message")
+        self.register("claude", _cmd_claude, "enter/exit Claude Agent SDK mode")
         if self._cron_manager is not None:
             self.register("cron", _cmd_cron, "list or remove cron jobs")
         if self._gateway_manager is not None:
