@@ -530,29 +530,48 @@ class GatewayManager:
             # Send message to Claude via SDK
             await client.query(msg.content)
 
-            # Receive response stream and collect text
-            response_text = ""
+            # Receive response stream - ensure all messages are consumed
+            response_chunks = []
+            message_count = 0
+
             async for message in client.receive_response():
+                message_count += 1
                 if isinstance(message, AssistantMessage):
                     # Extract text from assistant message
+                    chunk_text = ""
                     for block in message.content:
                         if hasattr(block, "text"):
-                            response_text += block.text
+                            chunk_text += block.text
 
-            # Send response back to channel
-            if response_text:
-                await channel.send(
-                    OutboundMessage(
-                        channel=msg.channel,
-                        user_id=msg.user_id,
-                        context_id=msg.context_id,
-                        chat_id=msg.chat_id,
-                        content=response_text,
-                        type="ai",
-                        metadata={**metadata, "claude_mode": True},
-                    )
-                )
-                logger.info(f"Claude SDK response sent | {len(response_text)} chars")
+                    if chunk_text:
+                        response_chunks.append(chunk_text)
+                        # Send immediately for real-time streaming
+                        try:
+                            await channel.send(
+                                OutboundMessage(
+                                    channel=msg.channel,
+                                    user_id=msg.user_id,
+                                    context_id=msg.context_id,
+                                    chat_id=msg.chat_id,
+                                    content=chunk_text,
+                                    type="ai",
+                                    metadata={**metadata, "claude_mode": True, "streaming": True},
+                                )
+                            )
+                        except Exception as send_err:
+                            # Log but continue consuming messages to avoid blocking client
+                            logger.error(f"Failed to send chunk | error={send_err}")
+                else:
+                    # Log other message types (ToolUse, etc.)
+                    logger.debug(f"Claude SDK message | type={type(message).__name__}")
+
+            # Log completion stats
+            total_chars = sum(len(chunk) for chunk in response_chunks)
+            logger.info(
+                f"Claude SDK response completed | "
+                f"{total_chars} chars in {len(response_chunks)} chunks | "
+                f"{message_count} total messages"
+            )
 
         except ImportError:
             logger.error(

@@ -575,8 +575,7 @@ class SlackChannel(BaseChannel):
         stripped = text.strip()
         if stripped.startswith("/") or stripped.startswith("!"):
             parts = stripped.split()
-            cmd = parts[0].lstrip("/").lower() if parts else ""
-            cmd = parts[0].lstrip("!").lower() if parts else ""
+            cmd = parts[0].lstrip("/!").lower() if parts else ""
             args = parts[1:] if len(parts) > 1 else []
 
             if cmd and self._command_router is not None:
