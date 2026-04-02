@@ -157,15 +157,11 @@ class SessionManager:
                 self._claude_mode_store[key] = True
             else:
                 self._claude_mode_store.pop(key, None)
-                # Disconnect and cleanup the client when exiting
+                # Cleanup the client session when exiting (keep connection alive)
                 client = self._claude_sessions.pop(key, None)
                 self._claude_has_approval.pop(key, None)
                 if client:
-                    try:
-                        await client.disconnect()
-                        logger.info(f"Disconnected Claude SDK client for {key}")
-                    except Exception as e:
-                        logger.warning(f"Failed to disconnect Claude SDK client: {e}")
+                    logger.info(f"Cleaned up Claude SDK session for {key} (connection kept alive)")
 
     async def update_claude_context(
         self,
