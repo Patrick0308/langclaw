@@ -134,13 +134,19 @@ class SlackChannel(BaseChannel):
         @app.action(re.compile("^approval_approve_"))
         async def handle_approve(ack: Any, action: dict, body: dict) -> None:
             await ack()
-            logger.info(f"Approval button action triggered | action={action} | body_user={body.get('user', {}).get('id')}")
+            logger.info(
+                f"Approval button action triggered | action={action} | "
+                f"body_user={body.get('user', {}).get('id')}"
+            )
 
             request_id = action["value"].replace("approve_", "")
             user_id = body["user"]["id"]
             channel_id = body["channel"]["id"]
 
-            logger.info(f"Processing approval | request_id={request_id} | user={user_id} | channel={channel_id}")
+            logger.info(
+                f"Processing approval | request_id={request_id} | "
+                f"user={user_id} | channel={channel_id}"
+            )
 
             # Check if user is allowed to approve
             username = self._user_cache.get(user_id)
@@ -154,8 +160,10 @@ class SlackChannel(BaseChannel):
                     logger.debug(f"Failed to fetch Slack user info: {exc}")
 
             if not self._is_allowed(user_id, username):
-                error_msg = f"❌ You are not authorized to approve tool executions."
-                logger.warning(f"Approval denied - user not in allow_from | user={user_id} ({username})")
+                error_msg = "❌ You are not authorized to approve tool executions."
+                logger.warning(
+                    f"Approval denied - user not in allow_from | user={user_id} ({username})"
+                )
                 try:
                     await self._send_text(channel_id, error_msg)
                 except Exception as exc:
@@ -187,13 +195,19 @@ class SlackChannel(BaseChannel):
         @app.action(re.compile("^approval_deny_"))
         async def handle_deny(ack: Any, action: dict, body: dict) -> None:
             await ack()
-            logger.info(f"Deny button action triggered | action={action} | body_user={body.get('user', {}).get('id')}")
+            logger.info(
+                f"Deny button action triggered | action={action} | "
+                f"body_user={body.get('user', {}).get('id')}"
+            )
 
             request_id = action["value"].replace("deny_", "")
             user_id = body["user"]["id"]
             channel_id = body["channel"]["id"]
 
-            logger.info(f"Processing denial | request_id={request_id} | user={user_id} | channel={channel_id}")
+            logger.info(
+                f"Processing denial | request_id={request_id} | "
+                f"user={user_id} | channel={channel_id}"
+            )
 
             # Check if user is allowed to deny
             username = self._user_cache.get(user_id)
@@ -207,8 +221,10 @@ class SlackChannel(BaseChannel):
                     logger.debug(f"Failed to fetch Slack user info: {exc}")
 
             if not self._is_allowed(user_id, username):
-                error_msg = f"❌ You are not authorized to deny tool executions."
-                logger.warning(f"Denial rejected - user not in allow_from | user={user_id} ({username})")
+                error_msg = "❌ You are not authorized to deny tool executions."
+                logger.warning(
+                    f"Denial rejected - user not in allow_from | user={user_id} ({username})"
+                )
                 try:
                     await self._send_text(channel_id, error_msg)
                 except Exception as exc:
@@ -341,8 +357,11 @@ class SlackChannel(BaseChannel):
         input_data: dict,
         chat_id: str,
         user_id: str,
+        metadata: dict | None = None,
     ) -> None:
         """Send a tool approval request using Slack Block Kit."""
+        # Extract thread_ts from metadata for Slack threading
+        thread_ts = (metadata or {}).get("thread_ts")
         if self._app is None:
             logger.error("Cannot send approval request: Slack app not initialized")
             raise RuntimeError("Slack app not initialized")
@@ -427,18 +446,25 @@ class SlackChannel(BaseChannel):
                 "elements": [
                     {
                         "type": "mrkdwn",
-                        "text": f"💡 Tip: Use `!approve {request_id}` or `!deny {request_id}` (all `/` commands support `!` prefix)",
+                        "text": (
+                            f"💡 Tip: Use `!approve {request_id}` or `!deny {request_id}` "
+                            "(all `/` commands support `!` prefix)"
+                        ),
                     }
                 ],
             },
         ]
 
         try:
-            await self._app.client.chat_postMessage(
-                channel=chat_id,
-                text=fallback_text,
-                blocks=blocks,
-            )
+            kwargs: dict[str, Any] = {
+                "channel": chat_id,
+                "text": fallback_text,
+                "blocks": blocks,
+            }
+            if thread_ts:
+                kwargs["thread_ts"] = thread_ts
+
+            await self._app.client.chat_postMessage(**kwargs)
         except Exception as exc:
             logger.error(f"Failed to send approval request to Slack: {exc}")
 

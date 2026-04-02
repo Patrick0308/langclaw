@@ -119,6 +119,7 @@ class BaseChannel(ABC):
         input_data: dict,
         chat_id: str,
         user_id: str,
+        metadata: dict | None = None,
     ) -> None:
         """
         Send a tool approval request to the user.
@@ -133,6 +134,7 @@ class BaseChannel(ABC):
             input_data: Tool input parameters.
             chat_id:    Chat/conversation identifier.
             user_id:    User identifier.
+            metadata:   Channel-specific metadata (e.g., thread_ts for Slack).
         """
         # Default markdown format
         lines = [

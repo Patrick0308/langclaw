@@ -60,6 +60,7 @@ class ApprovalManager:
         user_id: str,
         chat_id: str,
         context_id: str,
+        metadata: dict[str, Any] | None = None,
     ) -> PermissionResultAllow | PermissionResultDeny:
         """
         Request user approval for a tool execution.
@@ -76,6 +77,7 @@ class ApprovalManager:
             user_id:      User identifier.
             chat_id:      Chat/conversation identifier.
             context_id:   Context identifier.
+            metadata:     Channel-specific metadata (e.g., thread_ts for Slack).
 
         Returns:
             PermissionResultAllow if approved, PermissionResultDeny if denied.
@@ -114,13 +116,18 @@ class ApprovalManager:
             )
 
             try:
-                await channel.send_approval_request(
-                    request_id=request_id,
-                    tool_name=tool_name,
-                    input_data=input_data,
-                    chat_id=chat_id,
-                    user_id=user_id,
-                )
+                # Build kwargs for send_approval_request
+                request_kwargs: dict[str, Any] = {
+                    "request_id": request_id,
+                    "tool_name": tool_name,
+                    "input_data": input_data,
+                    "chat_id": chat_id,
+                    "user_id": user_id,
+                }
+                if metadata:
+                    request_kwargs["metadata"] = metadata
+
+                await channel.send_approval_request(**request_kwargs)
                 logger.info(f"Approval request sent | request_id={request_id} | tool={tool_name}")
             except Exception as e:
                 logger.error(

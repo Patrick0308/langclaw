@@ -497,6 +497,7 @@ class GatewayManager:
                             user_id=msg.user_id,
                             chat_id=ctx["chat_id"],
                             context_id=ctx["context_id"],
+                            metadata=msg.metadata,
                         )
                         logger.info(
                             f"Tool approval result | tool={tool_name} | "
