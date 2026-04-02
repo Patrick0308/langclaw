@@ -646,6 +646,13 @@ class SlackChannel(BaseChannel):
             except Exception as exc:
                 logger.debug(f"Failed to send 'not authorized' reply: {exc}")
             return
+        # Thread-scoped context for channels, channel-scoped for DMs
+        if is_dm:
+            context_id = channel_id
+        elif thread_ts:
+            context_id = f"{channel_id}:{thread_ts}"
+        else:
+            context_id = f"{channel_id}:{message_ts}"
 
         # -- Command handling (/start, /help, /reset, /cron) --
         stripped = text.strip()
@@ -655,13 +662,23 @@ class SlackChannel(BaseChannel):
             args = parts[1:] if len(parts) > 1 else []
 
             if cmd and self._command_router is not None:
+                # Build metadata including thread_ts for threaded responses
+                cmd_metadata = {
+                    "platform": "slack",
+                    "username": username,
+                    "message_ts": message_ts,
+                }
+                if thread_ts:
+                    cmd_metadata["thread_ts"] = thread_ts
+
                 ctx = CommandContext(
                     channel=self.name,
                     user_id=user_id,
-                    context_id=channel_id,
+                    context_id=context_id,
                     chat_id=channel_id,
                     args=args,
                     display_name=username or user_id,
+                    metadata=cmd_metadata,
                 )
                 response = await self._command_router.dispatch(cmd, ctx)
                 try:
@@ -726,14 +743,6 @@ class SlackChannel(BaseChannel):
                 file_name = file_info.get("name", "file")
                 content_parts.append(f"[attachment: {file_name} - download failed]")
 
-        # Thread-scoped context for channels, channel-scoped for DMs
-        if is_dm:
-            context_id = channel_id
-        elif thread_ts:
-            context_id = f"{channel_id}:{thread_ts}"
-        else:
-            context_id = f"{channel_id}:{message_ts}"
-
         await self._bus.publish(
             InboundMessage(
                 channel=self.name,
@@ -777,6 +786,12 @@ class SlackChannel(BaseChannel):
         # Get username
         username = command.get("user_name", "")
 
+        # Build metadata for slash command
+        cmd_metadata = {
+            "platform": "slack",
+            "username": username,
+        }
+
         ctx = CommandContext(
             channel=self.name,
             user_id=user_id,
@@ -784,6 +799,7 @@ class SlackChannel(BaseChannel):
             chat_id=channel_id,
             args=args,
             display_name=username or user_id,
+            metadata=cmd_metadata,
         )
         response = await self._command_router.dispatch(cmd_name, ctx)
 

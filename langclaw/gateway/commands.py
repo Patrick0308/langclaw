@@ -42,6 +42,7 @@ class CommandContext:
     chat_id: str
     args: list[str] = field(default_factory=list)
     display_name: str = ""
+    metadata: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -303,8 +304,11 @@ async def _cmd_claude(ctx: CommandContext) -> str:
         if router._gateway_manager is None or router._gateway_manager._bus is None:
             return "Claude run mode is not available (gateway not initialized)."
 
-        # Publish oneshot query to bus
+        # Publish oneshot query to bus (preserve original metadata like thread_ts)
         from langclaw.bus.base import InboundMessage
+
+        # Merge original metadata with claude-oneshot flag
+        oneshot_metadata = {**ctx.metadata, "claude-oneshot": True}
 
         await router._gateway_manager._bus.publish(
             InboundMessage(
@@ -313,8 +317,8 @@ async def _cmd_claude(ctx: CommandContext) -> str:
                 context_id=ctx.context_id,
                 chat_id=ctx.chat_id,
                 content=query,
-                origin="user",
-                metadata={"claude-oneshot": True},
+                origin="channel",
+                metadata=oneshot_metadata,
             )
         )
 
