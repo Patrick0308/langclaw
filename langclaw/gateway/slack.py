@@ -142,10 +142,13 @@ class SlackChannel(BaseChannel):
             request_id = action["value"].replace("approve_", "")
             user_id = body["user"]["id"]
             channel_id = body["channel"]["id"]
+            # Extract thread_ts from the message that contains the button
+            message = body.get("message", {})
+            thread_ts = message.get("thread_ts") or message.get("ts")
 
             logger.info(
                 f"Processing approval | request_id={request_id} | "
-                f"user={user_id} | channel={channel_id}"
+                f"user={user_id} | channel={channel_id} | thread_ts={thread_ts}"
             )
 
             # Check if user is allowed to approve
@@ -165,7 +168,7 @@ class SlackChannel(BaseChannel):
                     f"Approval denied - user not in allow_from | user={user_id} ({username})"
                 )
                 try:
-                    await self._send_text(channel_id, error_msg)
+                    await self._send_text(channel_id, error_msg, thread_ts=thread_ts)
                 except Exception as exc:
                     logger.error(f"Failed to send authorization error: {exc}")
                 return
@@ -184,9 +187,9 @@ class SlackChannel(BaseChannel):
                 response = await self._command_router.dispatch("approve", ctx)
                 logger.info(f"Approval button clicked | request_id={request_id} | user={user_id}")
 
-                # Send response back to Slack
+                # Send response back to Slack in the same thread
                 try:
-                    await self._send_text(channel_id, response)
+                    await self._send_text(channel_id, response, thread_ts=thread_ts)
                 except Exception as exc:
                     logger.error(f"Failed to send approval response: {exc}")
             else:
@@ -203,10 +206,13 @@ class SlackChannel(BaseChannel):
             request_id = action["value"].replace("deny_", "")
             user_id = body["user"]["id"]
             channel_id = body["channel"]["id"]
+            # Extract thread_ts from the message that contains the button
+            message = body.get("message", {})
+            thread_ts = message.get("thread_ts") or message.get("ts")
 
             logger.info(
                 f"Processing denial | request_id={request_id} | "
-                f"user={user_id} | channel={channel_id}"
+                f"user={user_id} | channel={channel_id} | thread_ts={thread_ts}"
             )
 
             # Check if user is allowed to deny
@@ -226,7 +232,7 @@ class SlackChannel(BaseChannel):
                     f"Denial rejected - user not in allow_from | user={user_id} ({username})"
                 )
                 try:
-                    await self._send_text(channel_id, error_msg)
+                    await self._send_text(channel_id, error_msg, thread_ts=thread_ts)
                 except Exception as exc:
                     logger.error(f"Failed to send authorization error: {exc}")
                 return
@@ -245,9 +251,9 @@ class SlackChannel(BaseChannel):
                 response = await self._command_router.dispatch("deny", ctx)
                 logger.info(f"Deny button clicked | request_id={request_id} | user={user_id}")
 
-                # Send response back to Slack
+                # Send response back to Slack in the same thread
                 try:
-                    await self._send_text(channel_id, response)
+                    await self._send_text(channel_id, response, thread_ts=thread_ts)
                 except Exception as exc:
                     logger.error(f"Failed to send deny response: {exc}")
             else:
