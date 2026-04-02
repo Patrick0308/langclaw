@@ -86,7 +86,7 @@ class ApprovalManager:
 
         logger.info(
             f"ApprovalManager.request_approval called | tool={tool_name} | "
-            f"channel={channel_name} | user={user_id} | chat={chat_id}"
+            f"channel={channel_name} | user={user_id} | chat={chat_id} | metadata={metadata}"
         )
 
         # Create unique request ID

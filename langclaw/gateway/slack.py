@@ -362,6 +362,10 @@ class SlackChannel(BaseChannel):
         """Send a tool approval request using Slack Block Kit."""
         # Extract thread_ts from metadata for Slack threading
         thread_ts = (metadata or {}).get("thread_ts")
+        logger.info(
+            f"Slack approval request | request_id={request_id} | chat_id={chat_id} | "
+            f"thread_ts={thread_ts} | metadata={metadata}"
+        )
         if self._app is None:
             logger.error("Cannot send approval request: Slack app not initialized")
             raise RuntimeError("Slack app not initialized")

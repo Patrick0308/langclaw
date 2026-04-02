@@ -486,7 +486,7 @@ class GatewayManager:
                         )
                         logger.info(
                             f"Claude context retrieved | chat_id={ctx.get('chat_id')} | "
-                            f"context_id={ctx.get('context_id')}"
+                            f"context_id={ctx.get('context_id')} | metadata={msg.metadata}"
                         )
                         result = await self._approval_manager.request_approval(
                             tool_name=tool_name,
