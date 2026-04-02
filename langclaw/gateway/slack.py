@@ -142,6 +142,26 @@ class SlackChannel(BaseChannel):
 
             logger.info(f"Processing approval | request_id={request_id} | user={user_id} | channel={channel_id}")
 
+            # Check if user is allowed to approve
+            username = self._user_cache.get(user_id)
+            if not username:
+                try:
+                    user_info = await self._app.client.users_info(user=user_id)
+                    username = user_info.get("user", {}).get("name", "")
+                    if username:
+                        self._user_cache[user_id] = username
+                except Exception as exc:
+                    logger.debug(f"Failed to fetch Slack user info: {exc}")
+
+            if not self._is_allowed(user_id, username):
+                error_msg = f"❌ You are not authorized to approve tool executions."
+                logger.warning(f"Approval denied - user not in allow_from | user={user_id} ({username})")
+                try:
+                    await self._send_text(channel_id, error_msg)
+                except Exception as exc:
+                    logger.error(f"Failed to send authorization error: {exc}")
+                return
+
             # Directly dispatch approve command (don't send to bus to avoid Claude mode routing)
             if self._command_router:
                 from langclaw.gateway.commands import CommandContext
@@ -174,6 +194,26 @@ class SlackChannel(BaseChannel):
             channel_id = body["channel"]["id"]
 
             logger.info(f"Processing denial | request_id={request_id} | user={user_id} | channel={channel_id}")
+
+            # Check if user is allowed to deny
+            username = self._user_cache.get(user_id)
+            if not username:
+                try:
+                    user_info = await self._app.client.users_info(user=user_id)
+                    username = user_info.get("user", {}).get("name", "")
+                    if username:
+                        self._user_cache[user_id] = username
+                except Exception as exc:
+                    logger.debug(f"Failed to fetch Slack user info: {exc}")
+
+            if not self._is_allowed(user_id, username):
+                error_msg = f"❌ You are not authorized to deny tool executions."
+                logger.warning(f"Denial rejected - user not in allow_from | user={user_id} ({username})")
+                try:
+                    await self._send_text(channel_id, error_msg)
+                except Exception as exc:
+                    logger.error(f"Failed to send authorization error: {exc}")
+                return
 
             # Directly dispatch deny command (don't send to bus to avoid Claude mode routing)
             if self._command_router:
