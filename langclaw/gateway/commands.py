@@ -292,6 +292,35 @@ async def _cmd_claude(ctx: CommandContext) -> str:
             "Use claude quit to exit this mode."
         )
 
+    if sub == "run":
+        # One-shot query: execute once and exit
+        if len(ctx.args) < 2:
+            return "Usage: /claude run <query>"
+
+        query = " ".join(ctx.args[1:])
+
+        # Check if gateway manager and bus are available
+        if router._gateway_manager is None or router._gateway_manager._bus is None:
+            return "Claude run mode is not available (gateway not initialized)."
+
+        # Publish oneshot query to bus
+        from langclaw.bus.base import InboundMessage
+
+        await router._gateway_manager._bus.publish(
+            InboundMessage(
+                channel=ctx.channel,
+                user_id=ctx.user_id,
+                context_id=ctx.context_id,
+                chat_id=ctx.chat_id,
+                content=query,
+                origin="user",
+                metadata={"claude-oneshot": True},
+            )
+        )
+
+        # Return empty string - response will come from claude mode handler
+        return ""
+
     if sub == "workspace":
         # Workspace management
         if len(ctx.args) < 2:
@@ -333,6 +362,7 @@ async def _cmd_claude(ctx: CommandContext) -> str:
     return (
         "Claude Agent SDK mode.\n"
         "Usage:\n"
+        "  /claude run <query>     - Execute one-shot query (auto-exit)\n"
         "  /claude start           - Enter Claude SDK mode\n"
         "  /claude quit            - Exit Claude SDK mode\n"
         "  /claude workspace show  - Show current workspace\n"

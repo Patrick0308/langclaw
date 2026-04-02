@@ -899,10 +899,24 @@ class GatewayManager:
             )
             return
 
-        # Check if user is in Claude Agent SDK mode
+        # Check if user is in Claude Agent SDK mode or one-shot query
         is_claude_mode = await self._sessions.get_claude_mode(msg.channel, msg.user_id)
-        if is_claude_mode:
+        is_oneshot = msg.metadata.get("claude-oneshot", False) if msg.metadata else False
+
+        if is_claude_mode or is_oneshot:
+            # Temporarily enable claude mode for oneshot queries
+            if is_oneshot and not is_claude_mode:
+                await self._sessions.set_claude_mode(msg.channel, msg.user_id, True)
+
             await self._handle_claude_mode(msg, channel, meta)
+
+            # Auto-exit claude mode after oneshot query
+            if is_oneshot:
+                await self._sessions.set_claude_mode(msg.channel, msg.user_id, False)
+                logger.info(
+                    f"Claude oneshot completed | channel={msg.channel} user={msg.user_id}"
+                )
+
             return
 
         # Message for main agent — resolve which agent handles this session.
