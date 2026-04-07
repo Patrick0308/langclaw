@@ -164,6 +164,14 @@ class SlackChannelConfig(BaseModel):
     """Emoji name for 'processing' reaction. Default: 'eyes' (👀)."""
     reaction_complete: str = "white_check_mark"
     """Emoji name for 'complete' reaction. Default: 'white_check_mark' (✅)."""
+    thread_history_enabled: bool = True
+    """Enable fetching thread history to provide context to the LLM."""
+    thread_history_max_messages: int = 10
+    """Maximum number of messages to fetch from thread history."""
+    thread_history_cache_ttl: int = 300
+    """Thread history cache TTL in seconds (default: 5 minutes)."""
+    thread_history_max_chars: int = 2000
+    """Maximum total characters for thread history (default: 2000). Prioritizes recent messages."""
 
 
 class ChannelsConfig(BaseModel):

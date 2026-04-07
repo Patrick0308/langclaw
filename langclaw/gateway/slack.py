@@ -22,6 +22,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +46,24 @@ logger = logging.getLogger(__name__)
 
 MAX_MESSAGE_LEN = 3000  # Slack has a 3000 char limit for text blocks
 MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024  # 20 MB
+
+
+# ---------------------------------------------------------------------------
+# Thread History Cache
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ThreadHistoryCache:
+    """Cache entry for Slack thread conversation history."""
+
+    messages: list[dict[str, Any]]
+    cached_at: float
+    ttl: float
+
+    def is_expired(self) -> bool:
+        """Check if cache entry has expired."""
+        return time.time() - self.cached_at > self.ttl
 
 
 # ---------------------------------------------------------------------------
@@ -77,6 +97,9 @@ class SlackChannel(BaseChannel):
         self._user_cache: dict[str, str] = {}
         # Bot user ID for stripping mentions from app_mention events
         self._bot_user_id: str | None = None
+        # Thread history cache: thread_ts -> ThreadHistoryCache
+        self._thread_history_cache: dict[str, ThreadHistoryCache] = {}
+        self._cache_lock = asyncio.Lock()
 
     def is_enabled(self) -> bool:
         return (
@@ -671,6 +694,18 @@ class SlackChannel(BaseChannel):
                 if thread_ts:
                     cmd_metadata["thread_ts"] = thread_ts
 
+                # Special handling for /claude run: inject thread history into query
+                if cmd == "claude" and args and args[0] == "run" and thread_ts:
+                    thread_history = await self._get_thread_history(channel_id, thread_ts)
+                    if thread_history and len(args) > 1:
+                        # Inject thread history before the query
+                        query = " ".join(args[1:])
+                        args = ["run", f"{thread_history}\n\n{query}"]
+                        logger.debug(
+                            f"Injected thread history into /claude run command "
+                            f"(thread_ts={thread_ts})"
+                        )
+
                 ctx = CommandContext(
                     channel=self.name,
                     user_id=user_id,
@@ -681,6 +716,8 @@ class SlackChannel(BaseChannel):
                     metadata=cmd_metadata,
                 )
                 response = await self._command_router.dispatch(cmd, ctx)
+                if response == "":
+                    return
                 try:
                     await self._send_text(channel_id, response, thread_ts=thread_ts)
                 except Exception as exc:
@@ -742,6 +779,13 @@ class SlackChannel(BaseChannel):
                 logger.warning(f"Failed to download Slack attachment: {exc}")
                 file_name = file_info.get("name", "file")
                 content_parts.append(f"[attachment: {file_name} - download failed]")
+
+        # Fetch thread history if this is a thread message
+        if thread_ts:
+            thread_context = await self._get_thread_history(channel_id, thread_ts)
+            if thread_context:
+                # Insert thread context at the beginning
+                content_parts.insert(0, thread_context)
 
         await self._bus.publish(
             InboundMessage(
@@ -816,3 +860,207 @@ class SlackChannel(BaseChannel):
     def _is_allowed(self, user_id: str, username: str | None) -> bool:
         """Return True if the user passes the allow_from whitelist check."""
         return is_allowed(self._config.allow_from, user_id, username)
+
+    async def _get_thread_history(
+        self,
+        channel_id: str,
+        thread_ts: str,
+    ) -> str:
+        """
+        Fetch Slack thread history with caching.
+
+        Returns a formatted string of recent thread messages to provide context
+        to the LLM. Caches results with TTL to avoid rate limiting.
+
+        Args:
+            channel_id: Slack channel ID
+            thread_ts: Thread timestamp (unique thread identifier)
+
+        Returns:
+            Formatted string of thread history, or empty string if unavailable
+        """
+        if not self._app or not self._config.thread_history_enabled:
+            return ""
+
+        # Check cache first
+        async with self._cache_lock:
+            cached = self._thread_history_cache.get(thread_ts)
+            if cached and not cached.is_expired():
+                logger.debug(f"Thread history cache hit for {thread_ts}")
+                return self._format_thread_history(cached.messages, thread_ts)
+
+        # Cache miss or expired - fetch from Slack API
+        try:
+            result = await self._app.client.conversations_replies(
+                channel=channel_id,
+                ts=thread_ts,
+                limit=self._config.thread_history_max_messages,
+            )
+
+            messages = result.get("messages", [])
+            if not messages:
+                return ""
+
+            # Update cache
+            async with self._cache_lock:
+                self._thread_history_cache[thread_ts] = ThreadHistoryCache(
+                    messages=messages,
+                    cached_at=time.time(),
+                    ttl=self._config.thread_history_cache_ttl,
+                )
+                # Clean up expired entries (opportunistic cleanup)
+                expired_keys = [
+                    k for k, v in self._thread_history_cache.items() if v.is_expired()
+                ]
+                for key in expired_keys:
+                    del self._thread_history_cache[key]
+                if expired_keys:
+                    logger.debug(f"Cleaned up {len(expired_keys)} expired thread cache entries")
+
+            logger.info(f"Fetched thread history for {thread_ts} ({len(messages)} messages)")
+            return self._format_thread_history(messages, thread_ts)
+
+        except Exception as exc:
+            logger.warning(f"Failed to fetch thread history for {thread_ts}: {exc}")
+            return ""
+
+    def _format_attachments(self, msg: dict[str, Any]) -> str:
+        """
+        Format Slack message attachments into a concise description.
+
+        Handles:
+        - files: File attachments (images, documents, etc.)
+        - attachments: Rich text attachments (link previews, cards)
+
+        Args:
+            msg: Slack message dict
+
+        Returns:
+            Formatted attachment description, or empty string if no attachments
+        """
+        parts = []
+
+        # Handle file attachments
+        files = msg.get("files", [])
+        if files:
+            file_descriptions = []
+            for file_info in files:
+                name = file_info.get("name", "file")
+                filetype = file_info.get("filetype", "")
+                # Categorize by type
+                if filetype in ("png", "jpg", "jpeg", "gif", "webp"):
+                    file_descriptions.append(f"[image: {name}]")
+                elif filetype in ("pdf", "doc", "docx", "txt", "md"):
+                    file_descriptions.append(f"[document: {name}]")
+                elif filetype in ("mp4", "mov", "avi"):
+                    file_descriptions.append(f"[video: {name}]")
+                elif filetype in ("mp3", "wav", "ogg"):
+                    file_descriptions.append(f"[audio: {name}]")
+                else:
+                    file_descriptions.append(f"[file: {name}]")
+
+            if file_descriptions:
+                parts.append(" ".join(file_descriptions))
+
+        # Handle rich text attachments (link previews, etc.)
+        attachments = msg.get("attachments", [])
+        if attachments:
+            for att in attachments:
+                # Try to extract meaningful info
+                title = att.get("title", "")
+                title_link = att.get("title_link", "")
+                text = att.get("text", "")
+
+                if title_link:
+                    parts.append(f"[link: {title or title_link}]")
+                elif title:
+                    parts.append(f"[attachment: {title}]")
+                elif text and len(text) < 50:
+                    parts.append(f"[attachment: {text}]")
+
+        return " ".join(parts)
+
+    def _format_thread_history(self, messages: list[dict[str, Any]], thread_ts: str) -> str:
+        """
+        Format Slack thread messages into a readable context string.
+
+        Prioritizes recent messages and enforces a total character limit.
+        If the limit is exceeded, older messages are truncated or omitted.
+
+        Args:
+            messages: List of Slack message dicts
+            thread_ts: Thread timestamp for reference
+
+        Returns:
+            Formatted string with thread context
+        """
+        if not messages:
+            return ""
+
+        max_total_chars = self._config.thread_history_max_chars
+        max_single_msg_chars = 200  # Per-message truncation limit
+
+        # Build formatted messages from newest to oldest
+        formatted_messages: list[str] = []
+        current_char_count = 0
+
+        # Process messages in reverse order (newest first)
+        for i, msg in enumerate(reversed(messages), 1):
+            user_id = msg.get("user", "unknown")
+            username = self._user_cache.get(user_id, user_id)
+            text = msg.get("text", "")
+
+            # Handle attachments (files, images, etc.)
+            attachment_info = self._format_attachments(msg)
+            if attachment_info:
+                text = f"{text} {attachment_info}" if text else attachment_info
+
+            # Truncate single message if too long
+            if len(text) > max_single_msg_chars:
+                text = text[:max_single_msg_chars] + "..."
+
+            # Format message line
+            msg_line = f"[{len(messages) - i + 1}] {username}: {text}"
+
+            # Check if adding this message would exceed total limit
+            if current_char_count + len(msg_line) + 1 > max_total_chars:  # +1 for newline
+                # If this is the first message and it's still too long, truncate it
+                if i == 1:
+                    available_chars = max_total_chars - current_char_count - 20  # Reserve for "..."
+                    if available_chars > 50:  # Only include if meaningful
+                        truncated_line = msg_line[:available_chars] + "..."
+                        formatted_messages.insert(0, truncated_line)
+                        current_char_count += len(truncated_line)
+                # Stop adding older messages
+                break
+
+            # Add message to the beginning (we're iterating in reverse)
+            formatted_messages.insert(0, msg_line)
+            current_char_count += len(msg_line) + 1  # +1 for newline
+
+        # Build final output with header and footer
+        total_messages = len(messages)
+        included_messages = len(formatted_messages)
+        omitted_messages = total_messages - included_messages
+
+        header = [
+            "=== Slack Thread Context ===",
+            f"Thread ID: {thread_ts}",
+            f"Messages in thread: {total_messages}",
+        ]
+
+        if omitted_messages > 0:
+            header.append(f"Showing {included_messages} most recent (omitted {omitted_messages} older)")
+
+        header.append("")
+
+        lines = header + formatted_messages + ["=== End Thread Context ===", ""]
+
+        result = "\n".join(lines)
+
+        logger.debug(
+            f"Formatted thread history: {included_messages}/{total_messages} messages, "
+            f"{len(result)} chars (limit: {max_total_chars})"
+        )
+
+        return result
