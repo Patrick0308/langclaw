@@ -55,8 +55,38 @@ def test_config_env_override(monkeypatch):
 def test_content_filter_middleware_instantiation():
     from langclaw.middleware.guardrails import ContentFilterMiddleware
 
+    # Test keyword-only instantiation
     mw = ContentFilterMiddleware(banned_keywords=["hack", "exploit"])
     assert mw._keywords == ["hack", "exploit"]
+    assert len(mw._custom_patterns) == 0
+    assert mw._use_builtin is True
+
+    # Test with custom patterns
+    mw2 = ContentFilterMiddleware(
+        banned_keywords=["attack"],
+        banned_pattern_sources=[r"\b(?:rm|dd)\s+-rf\b", r"DROP\s+TABLE"],
+        use_builtin_patterns=False,
+    )
+    assert mw2._keywords == ["attack"]
+    assert len(mw2._custom_patterns) == 2
+    assert mw2._use_builtin is False
+
+
+def test_content_filter_builtin_patterns():
+    """Test that built-in security patterns are loaded and cached."""
+    from langclaw.middleware.guardrails import BUILTIN_BANNED_PATTERNS, _PATTERN_CACHE
+
+    assert len(BUILTIN_BANNED_PATTERNS) > 0
+
+    # Test lazy compilation
+    compiled = _PATTERN_CACHE.get(BUILTIN_BANNED_PATTERNS)
+    assert len(compiled) == len(BUILTIN_BANNED_PATTERNS)
+
+    # Each compiled entry should be (rule_id, label, Pattern)
+    for rule_id, label, pattern in compiled:
+        assert isinstance(rule_id, str)
+        assert isinstance(label, str)
+        assert hasattr(pattern, "search")  # Verify it's a compiled Pattern
 
 
 def test_rate_limit_middleware_instantiation():

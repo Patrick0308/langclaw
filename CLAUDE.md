@@ -84,13 +84,19 @@ middleware: list[Any] = [
     ChannelContextMiddleware(),      # 1. Inject channel metadata (first)
     # ToolPermissionMiddleware,      # 2. RBAC filtering (if enabled)
     RateLimitMiddleware(...),        # 3. Rate limiting
-    ContentFilterMiddleware(...),    # 4. Content filtering
+    ContentFilterMiddleware(...),    # 4. Content filtering (before_agent + before_model)
     PIIMiddleware(...),              # 5. PII redaction
     *(extra_middleware or []),       # 6. User-provided (last)
 ]
 ```
 
 Order matters: earlier middleware runs first on input, last on output.
+
+**Content filtering strategy:**
+- `ContentFilterMiddleware` uses **two hooks** for defense-in-depth:
+  - `before_agent`: Early rejection at agent boundary (user input only)
+  - `before_model`: Blocks **every** LLM call (user input, tool results, subagent messages)
+- This ensures malicious content cannot reach the LLM even if injected via tool results or multi-turn conversations
 
 ### Adding a Checkpointer
 

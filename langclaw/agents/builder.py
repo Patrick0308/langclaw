@@ -306,6 +306,8 @@ def create_claw_agent(
             RateLimitMiddleware(rpm=config.agents.rate_limit_rpm),
             ContentFilterMiddleware(
                 banned_keywords=config.agents.banned_keywords,
+                banned_pattern_sources=config.agents.banned_patterns,
+                use_builtin_patterns=config.agents.banned_patterns_enabled,
             ),
             PIIMiddleware(
                 "azure_openai_api_key",

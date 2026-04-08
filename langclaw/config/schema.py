@@ -186,6 +186,16 @@ class AgentConfig(BaseModel):
     model_kwargs: dict[str, Any] = Field(default_factory=dict)
     rate_limit_rpm: int = 60
     banned_keywords: StringList = Field(default_factory=list)
+    """Case-insensitive keywords to block in ALL messages to LLM.
+    Applied via ContentFilterMiddleware (before_agent + before_model hooks).
+    Env format: ``keyword1,keyword2``"""
+    banned_patterns: StringList = Field(default_factory=list)
+    """Regex patterns to block in ALL messages to LLM (in addition to keywords).
+    Applied via ContentFilterMiddleware (before_agent + before_model hooks).
+    Env format: ``pattern1,pattern2`` or ``["pattern1","pattern2"]``"""
+    banned_patterns_enabled: bool = True
+    """Enable built-in high-confidence security patterns (DDoS, injection, XSS, etc.).
+    Applied via ContentFilterMiddleware on ALL LLM calls for defense-in-depth."""
     extra_skills: StringList = Field(default_factory=list)
     claude_sdk_require_approval: bool = True 
 

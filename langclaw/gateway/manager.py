@@ -728,13 +728,23 @@ class GatewayManager:
         for node_name, node_update in chunk.items():
             if not isinstance(node_update, dict):
                 continue
-            # Only handle model and tools nodes
-            # Skip middleware nodes
-            if node_name not in ["model", "tools"]:
+
+            # Only handle:
+            # - model and tools nodes (normal flow)
+            # - ContentFilterMiddleware (blocking messages)
+            is_model_or_tools = node_name in ["model", "tools"]
+            is_content_filter = node_name.startswith("ContentFilterMiddleware.")
+
+            if not (is_model_or_tools or is_content_filter):
                 continue
+
             messages = node_update.get("messages")
             if not messages:
                 continue
+
+            # Unwrap Overwrite objects from LangGraph state updates
+            if hasattr(messages, "value"):
+                messages = messages.value
 
             for m in messages:
                 # ── Tool-progress: LLM decided to call a tool ─────────────
