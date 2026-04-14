@@ -7,13 +7,11 @@ and outbound message delivery.
 
 from __future__ import annotations
 
-import asyncio
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 
-from langclaw.bus.base import Attachment, InboundMessage, OutboundMessage
+from langclaw.bus.base import InboundMessage, OutboundMessage
 from langclaw.config.schema import SlackChannelConfig
 from langclaw.gateway.commands import CommandContext, CommandRouter
 from langclaw.gateway.slack import SlackChannel

@@ -74,7 +74,7 @@ def test_content_filter_middleware_instantiation():
 
 def test_content_filter_builtin_patterns():
     """Test that built-in security patterns are loaded and cached."""
-    from langclaw.middleware.guardrails import BUILTIN_BANNED_PATTERNS, _PATTERN_CACHE
+    from langclaw.middleware.guardrails import _PATTERN_CACHE, BUILTIN_BANNED_PATTERNS
 
     assert len(BUILTIN_BANNED_PATTERNS) > 0
 

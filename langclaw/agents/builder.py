@@ -28,6 +28,7 @@ from langclaw.middleware.channel_context import ChannelContextMiddleware
 from langclaw.middleware.guardrails import ContentFilterMiddleware, PIIMiddleware
 from langclaw.middleware.permissions import build_tool_permission_middleware
 from langclaw.middleware.rate_limit import RateLimitMiddleware
+from langclaw.middleware.thread_context import ThreadContextMiddleware
 from langclaw.utils import to_virtual_path  # for extra_skills conversion
 
 if TYPE_CHECKING:
@@ -290,8 +291,9 @@ def create_claw_agent(
     #   2. ToolPermission middleware — filter tools per-user role
     #   3. RateLimitMiddleware       — rate-check early
     #   4. ContentFilterMiddleware   — block banned content
-    #   5. PIIMiddleware             — redact PII
-    #   6. caller-provided extras
+    #   5. ThreadContextMiddleware   — inject thread history (after content filter)
+    #   6. PIIMiddleware             — redact PII
+    #   7. caller-provided extras
     middleware: list[Any] = [
         ChannelContextMiddleware(),
     ]
@@ -309,6 +311,7 @@ def create_claw_agent(
                 banned_pattern_sources=config.agents.banned_patterns,
                 use_builtin_patterns=config.agents.banned_patterns_enabled,
             ),
+            ThreadContextMiddleware(),  # Inject thread context AFTER content filter
             PIIMiddleware(
                 "azure_openai_api_key",
                 detector=r"^[a-zA-Z0-9]{84}$",

@@ -694,15 +694,13 @@ class SlackChannel(BaseChannel):
                 if thread_ts:
                     cmd_metadata["thread_ts"] = thread_ts
 
-                # Special handling for /claude run: inject thread history into query
+                # Special handling for /claude run: add thread history to metadata
                 if cmd == "claude" and args and args[0] == "run" and thread_ts:
                     thread_history = await self._get_thread_history(channel_id, thread_ts)
-                    if thread_history and len(args) > 1:
-                        # Inject thread history before the query
-                        query = " ".join(args[1:])
-                        args = ["run", f"{thread_history}\n\n{query}"]
+                    if thread_history:
+                        cmd_metadata["thread_context"] = thread_history
                         logger.debug(
-                            f"Injected thread history into /claude run command "
+                            f"Added thread history to metadata for /claude run command "
                             f"(thread_ts={thread_ts})"
                         )
 
@@ -781,11 +779,17 @@ class SlackChannel(BaseChannel):
                 content_parts.append(f"[attachment: {file_name} - download failed]")
 
         # Fetch thread history if this is a thread message
+        # Store in metadata instead of content to bypass content filter
+        metadata = {
+            "platform": "slack",
+            "username": username,
+            "thread_ts": thread_ts,
+            "message_ts": message_ts,
+        }
         if thread_ts:
             thread_context = await self._get_thread_history(channel_id, thread_ts)
             if thread_context:
-                # Insert thread context at the beginning
-                content_parts.insert(0, thread_context)
+                metadata["thread_context"] = thread_context
 
         await self._bus.publish(
             InboundMessage(
@@ -796,12 +800,7 @@ class SlackChannel(BaseChannel):
                 content="\n".join(p for p in content_parts if p) or "[empty message]",
                 origin="channel",
                 attachments=msg_attachments,
-                metadata={
-                    "platform": "slack",
-                    "username": username,
-                    "thread_ts": thread_ts,
-                    "message_ts": message_ts,
-                },
+                metadata=metadata,
             )
         )
 
@@ -865,29 +864,35 @@ class SlackChannel(BaseChannel):
         self,
         channel_id: str,
         thread_ts: str,
-    ) -> str:
+    ) -> dict[str, Any]:
         """
         Fetch Slack thread history with caching.
 
-        Returns a formatted string of recent thread messages to provide context
-        to the LLM. Caches results with TTL to avoid rate limiting.
+        Returns raw thread data for ThreadContextMiddleware to format.
+        Caches results with TTL to avoid rate limiting.
 
         Args:
             channel_id: Slack channel ID
             thread_ts: Thread timestamp (unique thread identifier)
 
         Returns:
-            Formatted string of thread history, or empty string if unavailable
+            Dict with thread context data, or empty dict if unavailable.
+            Format: {
+                "messages": [{"username": str, "content": str, "ts": str}, ...],
+                "thread_id": str,
+                "platform": "slack",
+                "total_count": int,
+            }
         """
         if not self._app or not self._config.thread_history_enabled:
-            return ""
+            return {}
 
         # Check cache first
         async with self._cache_lock:
             cached = self._thread_history_cache.get(thread_ts)
             if cached and not cached.is_expired():
                 logger.debug(f"Thread history cache hit for {thread_ts}")
-                return self._format_thread_history(cached.messages, thread_ts)
+                return self._build_thread_context_data(cached.messages, thread_ts)
 
         # Cache miss or expired - fetch from Slack API
         try:
@@ -899,7 +904,7 @@ class SlackChannel(BaseChannel):
 
             messages = result.get("messages", [])
             if not messages:
-                return ""
+                return {}
 
             # Update cache
             async with self._cache_lock:
@@ -909,20 +914,133 @@ class SlackChannel(BaseChannel):
                     ttl=self._config.thread_history_cache_ttl,
                 )
                 # Clean up expired entries (opportunistic cleanup)
-                expired_keys = [
-                    k for k, v in self._thread_history_cache.items() if v.is_expired()
-                ]
+                expired_keys = [k for k, v in self._thread_history_cache.items() if v.is_expired()]
                 for key in expired_keys:
                     del self._thread_history_cache[key]
                 if expired_keys:
                     logger.debug(f"Cleaned up {len(expired_keys)} expired thread cache entries")
 
             logger.info(f"Fetched thread history for {thread_ts} ({len(messages)} messages)")
-            return self._format_thread_history(messages, thread_ts)
+
+            # Pre-fetch usernames for all users in thread to populate cache
+            await self._populate_username_cache(messages)
+
+            return self._build_thread_context_data(messages, thread_ts)
 
         except Exception as exc:
             logger.warning(f"Failed to fetch thread history for {thread_ts}: {exc}")
-            return ""
+            return {}
+
+    async def _populate_username_cache(self, messages: list[dict[str, Any]]) -> None:
+        """
+        Pre-fetch usernames for all unique users in messages to populate cache.
+
+        This ensures usernames are displayed correctly in thread context instead
+        of showing user IDs like U0920QF8G15.
+        """
+        if not self._app:
+            return
+
+        # Get unique user IDs that aren't already cached
+        user_ids_to_fetch = {
+            msg.get("user")
+            for msg in messages
+            if msg.get("user") and not msg.get("bot_id") and msg.get("user") not in self._user_cache
+        }
+
+        # Fetch usernames in parallel (with rate limiting consideration)
+        for user_id in user_ids_to_fetch:
+            try:
+                user_info = await self._app.client.users_info(user=user_id)
+                username = user_info.get("user", {}).get("name", user_id)
+                self._user_cache[user_id] = username
+                logger.debug(f"Cached username for {user_id}: {username}")
+            except Exception as exc:
+                logger.debug(f"Failed to fetch username for {user_id}: {exc}")
+                # Cache the user_id as fallback to avoid repeated failures
+                self._user_cache[user_id] = user_id
+
+    def _build_thread_context_data(
+        self, messages: list[dict[str, Any]], thread_ts: str
+    ) -> dict[str, Any]:
+        """
+        Build standardized thread context data structure.
+
+        Filters out:
+        - Bot messages (self._bot_user_id or bot_id field)
+        - Duplicate content (keeps most recent)
+
+        Args:
+            messages: Raw Slack message objects
+            thread_ts: Thread timestamp
+
+        Returns:
+            Standardized thread context dict for ThreadContextMiddleware
+        """
+        if not messages:
+            return {}
+
+        normalized_messages = []
+        seen_content: set[str] = set()
+        filtered_count = {"bot": 0, "empty": 0, "duplicate": 0}
+
+        for msg in messages:
+            # Skip bot messages
+            if msg.get("bot_id"):
+                filtered_count["bot"] += 1
+                logger.debug(f"Filtered bot message (bot_id): {msg.get('text', '')[:50]}")
+                continue
+            if self._bot_user_id and msg.get("user") == self._bot_user_id:
+                filtered_count["bot"] += 1
+                logger.debug(f"Filtered bot message (user_id): {msg.get('text', '')[:50]}")
+                continue
+
+            user_id = msg.get("user", "unknown")
+            username = self._user_cache.get(user_id, user_id)
+            text = msg.get("text", "")
+
+            # Handle attachments
+            attachment_info = self._format_attachments(msg)
+            if attachment_info:
+                text = f"{text} {attachment_info}" if text else attachment_info
+
+            # Skip empty messages
+            if not text.strip():
+                filtered_count["empty"] += 1
+                logger.debug(f"Filtered empty message from {username}")
+                continue
+
+            # Skip duplicate content (case-insensitive comparison)
+            content_normalized = text.strip().lower()
+            if content_normalized in seen_content:
+                filtered_count["duplicate"] += 1
+                logger.debug(f"Filtered duplicate message: {text[:50]}")
+                continue
+            seen_content.add(content_normalized)
+
+            normalized_messages.append(
+                {
+                    "username": username,
+                    "content": text,
+                    "ts": msg.get("ts", ""),
+                }
+            )
+
+        if filtered_count["bot"] or filtered_count["empty"] or filtered_count["duplicate"]:
+            logger.debug(
+                f"Thread {thread_ts} filtering: "
+                f"bot={filtered_count['bot']}, "
+                f"empty={filtered_count['empty']}, "
+                f"duplicate={filtered_count['duplicate']}, "
+                f"kept={len(normalized_messages)}/{len(messages)}"
+            )
+
+        return {
+            "messages": normalized_messages,
+            "thread_id": thread_ts,
+            "platform": "slack",
+            "total_count": len(messages),  # Original count before filtering
+        }
 
     def _format_attachments(self, msg: dict[str, Any]) -> str:
         """
@@ -1050,7 +1168,9 @@ class SlackChannel(BaseChannel):
         ]
 
         if omitted_messages > 0:
-            header.append(f"Showing {included_messages} most recent (omitted {omitted_messages} older)")
+            header.append(
+                f"Showing {included_messages} most recent (omitted {omitted_messages} older)"
+            )
 
         header.append("")
 

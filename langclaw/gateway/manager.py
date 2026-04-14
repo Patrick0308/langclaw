@@ -528,8 +528,21 @@ class GatewayManager:
                 f"approval_enabled={can_use_tool_callback is not None} | {msg.content[:100]}"
             )
 
+            # Prepend thread context if present in metadata
+            # (Claude SDK mode doesn't use middleware, so we handle it here)
+            content = msg.content
+            thread_data = metadata.get("thread_context")
+            if thread_data and isinstance(thread_data, dict):
+                # Format thread context using same logic as ThreadContextMiddleware
+                from langclaw.middleware.thread_context import ThreadContextMiddleware
+
+                formatter = ThreadContextMiddleware()
+                formatted_context = formatter._format_thread_context(thread_data)
+                if formatted_context:
+                    content = f"{formatted_context}\n\n{content}"
+
             # Send message to Claude via SDK
-            await client.query(msg.content)
+            await client.query(content)
 
             # Receive response stream - ensure all messages are consumed
             response_chunks = []
@@ -923,9 +936,7 @@ class GatewayManager:
             # Auto-exit claude mode after oneshot query
             if is_oneshot:
                 await self._sessions.set_claude_mode(msg.channel, msg.user_id, False)
-                logger.info(
-                    f"Claude oneshot completed | channel={msg.channel} user={msg.user_id}"
-                )
+                logger.info(f"Claude oneshot completed | channel={msg.channel} user={msg.user_id}")
 
             return
 
@@ -974,6 +985,8 @@ class GatewayManager:
         input_state = {
             "messages": [HumanMessage(content=content)],
         }
+        # Note: thread_context from metadata is injected by ThreadContextMiddleware
+        # after ContentFilterMiddleware, ensuring user input is validated first
 
         # Ensure the compiled agent is up to date with the latest AGENTS.md
         # contents for this agent's workspace before streaming.

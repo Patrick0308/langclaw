@@ -85,8 +85,9 @@ middleware: list[Any] = [
     # ToolPermissionMiddleware,      # 2. RBAC filtering (if enabled)
     RateLimitMiddleware(...),        # 3. Rate limiting
     ContentFilterMiddleware(...),    # 4. Content filtering (before_agent + before_model)
-    PIIMiddleware(...),              # 5. PII redaction
-    *(extra_middleware or []),       # 6. User-provided (last)
+    ThreadContextMiddleware(),       # 5. Inject thread history (AFTER content filter)
+    PIIMiddleware(...),              # 6. PII redaction
+    *(extra_middleware or []),       # 7. User-provided (last)
 ]
 ```
 
@@ -97,6 +98,12 @@ Order matters: earlier middleware runs first on input, last on output.
   - `before_agent`: Early rejection at agent boundary (user input only)
   - `before_model`: Blocks **every** LLM call (user input, tool results, subagent messages)
 - This ensures malicious content cannot reach the LLM even if injected via tool results or multi-turn conversations
+
+**Thread context handling:**
+- `ThreadContextMiddleware` runs **AFTER** `ContentFilterMiddleware`
+- Thread history from Slack/other channels is stored in `metadata["thread_context"]`
+- User input is validated first, then thread context is injected for LLM context
+- This ensures historical messages bypass content filter while user input is still validated
 
 ### Adding a Checkpointer
 
