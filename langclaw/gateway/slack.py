@@ -114,6 +114,7 @@ class SlackChannel(BaseChannel):
         try:
             from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
             from slack_bolt.async_app import AsyncApp
+            from slack_sdk.web.async_client import AsyncWebClient
         except ImportError as exc:
             raise ImportError(
                 "SlackChannel requires 'langclaw[slack]'. Install with: uv add 'langclaw[slack]'"
@@ -122,17 +123,41 @@ class SlackChannel(BaseChannel):
         self._bus = bus
         self._running = True
 
-        # Initialize Slack app
-        app = AsyncApp(token=self._config.bot_token)
+        # Find owner user ID from user_roles
+        owner_user_id = None
+        for user_id, role in self._config.user_roles.items():
+            if role == "owner":
+                owner_user_id = user_id
+                break
+
+        if not owner_user_id:
+            raise ValueError(
+                "No owner user found in user_roles. "
+                "Set LANGCLAW__CHANNELS__SLACK__USER_ROLES=<user_id>:owner"
+            )
+
+        # Configure WebClient to use proxy mode
+        # Only need to set base_url and x-slack-user-id header!
+        custom_web_client = AsyncWebClient(
+            token="dummy-bot-token",  # Proxy uses its own token
+            base_url="https://slack-proxy-api.longbridge.xyz/api",
+            headers={"x-slack-user-id": owner_user_id}
+        )
+
+        # Initialize Slack app with custom client (proxy mode)
+        app = AsyncApp(client=custom_web_client)
         self._app = app
 
         # Fetch bot user ID for mention stripping
         try:
             auth_response = await app.client.auth_test()
             self._bot_user_id = auth_response.get("user_id")
-            logger.info(f"Slack bot connected as {self._bot_user_id}")
+            logger.info(
+                f"Slack bot connected via proxy mode | "
+                f"owner={owner_user_id} bot={self._bot_user_id}"
+            )
         except Exception as exc:
-            logger.warning(f"Failed to fetch bot user ID: {exc}")
+            logger.warning(f"Failed to fetch bot user ID via proxy: {exc}")
 
         # Register event handlers
         @app.event("message")
