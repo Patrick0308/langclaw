@@ -11,18 +11,21 @@ import pytest
 from langclaw.config import schema
 
 
-def test_default_agent_name():
+@pytest.fixture(autouse=True)
+def _reload_schema_after_test():
+    """Reload schema module after each test to reset module-level state."""
+    yield
+    importlib.reload(schema)
+
+
+def test_default_agent_name(monkeypatch):
     """Agent name defaults to 'langclaw' when env var not set."""
     # Ensure env var is not set
-    old_val = os.environ.pop("LANGCLAW__AGENT_NAME", None)
-    try:
-        importlib.reload(schema)
-        config = schema.load_config()
-        assert config.agent_name == "langclaw"
-    finally:
-        if old_val:
-            os.environ["LANGCLAW__AGENT_NAME"] = old_val
-        importlib.reload(schema)
+    monkeypatch.delenv("LANGCLAW__AGENT_NAME", raising=False)
+    importlib.reload(schema)
+
+    config = schema.load_config()
+    assert config.agent_name == "langclaw"
 
 
 def test_custom_agent_name(monkeypatch):
@@ -33,9 +36,6 @@ def test_custom_agent_name(monkeypatch):
     config = schema.load_config()
     assert config.agent_name == "testbot"
 
-    # Cleanup
-    importlib.reload(schema)
-
 
 def test_empty_agent_name_falls_back(monkeypatch):
     """Empty agent name falls back to default."""
@@ -44,9 +44,6 @@ def test_empty_agent_name_falls_back(monkeypatch):
 
     config = schema.load_config()
     assert config.agent_name == "langclaw"
-
-    # Cleanup
-    importlib.reload(schema)
 
 
 def test_agent_name_with_whitespace(monkeypatch):
@@ -57,9 +54,6 @@ def test_agent_name_with_whitespace(monkeypatch):
     config = schema.load_config()
     assert config.agent_name == "mybot"
 
-    # Cleanup
-    importlib.reload(schema)
-
 
 def test_invalid_agent_name_raises(monkeypatch):
     """Invalid characters in agent name raise ValueError."""
@@ -67,10 +61,6 @@ def test_invalid_agent_name_raises(monkeypatch):
 
     with pytest.raises(ValueError, match="must contain only alphanumeric"):
         importlib.reload(schema)
-
-    # Cleanup: reset to valid state
-    monkeypatch.delenv("LANGCLAW__AGENT_NAME")
-    importlib.reload(schema)
 
 
 def test_custom_config_dir(monkeypatch, tmp_path):
@@ -80,9 +70,6 @@ def test_custom_config_dir(monkeypatch, tmp_path):
 
     config = schema.load_config()
     assert config.config_dir == tmp_path
-
-    # Cleanup
-    importlib.reload(schema)
 
 
 def test_config_dir_with_tilde(monkeypatch, tmp_path):
@@ -94,6 +81,3 @@ def test_config_dir_with_tilde(monkeypatch, tmp_path):
 
     config = schema.load_config()
     assert config.config_dir == home / ".test_langclaw"
-
-    # Cleanup
-    importlib.reload(schema)
