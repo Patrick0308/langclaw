@@ -81,3 +81,49 @@ def test_config_dir_with_tilde(monkeypatch, tmp_path):
 
     config = schema.load_config()
     assert config.config_dir == home / ".test_langclaw"
+
+
+def test_rabbitmq_uses_agent_name(monkeypatch, tmp_path):
+    """RabbitMQ bus config uses agent name from env var."""
+    monkeypatch.setenv("LANGCLAW__AGENT_NAME", "mybot")
+    monkeypatch.setenv("LANGCLAW__CONFIG_DIR", str(tmp_path))
+    importlib.reload(schema)
+
+    config = schema.load_config()
+    assert config.bus.rabbitmq.queue_name == "mybot.inbound"
+    assert config.bus.rabbitmq.exchange_name == "mybot"
+
+
+def test_kafka_uses_agent_name(monkeypatch, tmp_path):
+    """Kafka bus config uses agent name from env var."""
+    monkeypatch.setenv("LANGCLAW__AGENT_NAME", "mybot")
+    monkeypatch.setenv("LANGCLAW__CONFIG_DIR", str(tmp_path))
+    importlib.reload(schema)
+
+    config = schema.load_config()
+    assert config.bus.kafka.topic == "mybot.inbound"
+    assert config.bus.kafka.group_id == "mybot"
+
+
+def test_default_bus_names(tmp_path):
+    """Bus configs default to 'langclaw' when env var not set."""
+    # Ensure env var is not set
+    old_agent = os.environ.pop("LANGCLAW__AGENT_NAME", None)
+    old_config = os.environ.get("LANGCLAW__CONFIG_DIR")
+    os.environ["LANGCLAW__CONFIG_DIR"] = str(tmp_path)
+    try:
+        importlib.reload(schema)
+        config = schema.load_config()
+
+        assert config.bus.rabbitmq.queue_name == "langclaw.inbound"
+        assert config.bus.rabbitmq.exchange_name == "langclaw"
+        assert config.bus.kafka.topic == "langclaw.inbound"
+        assert config.bus.kafka.group_id == "langclaw"
+    finally:
+        if old_agent:
+            os.environ["LANGCLAW__AGENT_NAME"] = old_agent
+        if old_config:
+            os.environ["LANGCLAW__CONFIG_DIR"] = old_config
+        else:
+            os.environ.pop("LANGCLAW__CONFIG_DIR", None)
+        importlib.reload(schema)
