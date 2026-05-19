@@ -342,3 +342,34 @@ LANGCLAW__CHANNELS__TELEGRAM__ENABLED=true
 LANGCLAW__BUS__BACKEND=rabbitmq
 LANGCLAW__CHECKPOINTER__BACKEND=postgres
 ```
+
+## Configuration
+
+### Agent Name and Config Directory
+
+Customize the agent name and config directory via environment variables:
+
+**`LANGCLAW__AGENT_NAME`** — Agent identifier used throughout the system
+- Message bus queue/topic names (e.g., `mybot.inbound`)
+- Deepagents agent name
+- CLI output and logging
+- Default: `"langclaw"`
+
+**`LANGCLAW__CONFIG_DIR`** — Root directory for config and state files
+- Default: `"~/.langclaw"`
+- Supports `~` expansion and relative paths
+- All config, database, and workspace files are stored here
+
+**Usage:**
+
+```bash
+export LANGCLAW__AGENT_NAME=customerbot
+export LANGCLAW__CONFIG_DIR=~/.customerbot
+langclaw init
+langclaw gateway
+```
+
+**Important:**
+- Environment variables are read once at startup. Restart required to pick up changes.
+- When running multiple instances with shared message bus infrastructure (RabbitMQ/Kafka), each instance must have a unique `LANGCLAW__AGENT_NAME` to avoid queue/topic collisions.
+- To migrate an existing `~/.langclaw` directory, simply move it and set `LANGCLAW__CONFIG_DIR` to the new location.
