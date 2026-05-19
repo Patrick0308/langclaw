@@ -10,6 +10,8 @@ Load priority (highest to lowest):
 from __future__ import annotations
 
 import json
+import os
+import re
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -110,7 +112,19 @@ StringDict = Annotated[dict[str, str], BeforeValidator(_parse_str_dict)]
 # Langclaw home
 # ---------------------------------------------------------------------------
 
-_LANGCLAW_HOME = Path.home() / ".langclaw"
+# Read agent name and config directory from environment (once, at import time)
+_AGENT_NAME = os.getenv("LANGCLAW__AGENT_NAME", "langclaw").strip() or "langclaw"
+_CONFIG_DIR = os.getenv("LANGCLAW__CONFIG_DIR", "~/.langclaw").strip() or "~/.langclaw"
+
+# Validate agent name contains only safe characters
+if not re.match(r'^[a-zA-Z0-9_-]+$', _AGENT_NAME):
+    raise ValueError(
+        f"LANGCLAW__AGENT_NAME must contain only alphanumeric, hyphen, or underscore characters. "
+        f"Got: {_AGENT_NAME!r}"
+    )
+
+# Expand and resolve the config directory
+_LANGCLAW_HOME = Path(_CONFIG_DIR).expanduser().resolve()
 _CONFIG_PATH = _LANGCLAW_HOME / "config.json"
 
 # ---------------------------------------------------------------------------
