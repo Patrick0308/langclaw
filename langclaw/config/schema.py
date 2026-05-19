@@ -487,6 +487,23 @@ class LangclawConfig(BaseSettings):
     cron: CronConfig = Field(default_factory=CronConfig)
     heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
 
+    @property
+    def agent_name(self) -> str:
+        """The configured agent name (read-only, from LANGCLAW__AGENT_NAME env var).
+
+        Used in message bus queue/topic names, deepagents agent name, and display output.
+        Default: "langclaw"
+        """
+        return _AGENT_NAME
+
+    @property
+    def config_dir(self) -> Path:
+        """The configured root directory (read-only, from LANGCLAW__CONFIG_DIR env var).
+
+        Default: ~/.langclaw
+        """
+        return _LANGCLAW_HOME
+
     @model_validator(mode="before")
     @classmethod
     def _merge_json_file(cls, values: Any) -> Any:
