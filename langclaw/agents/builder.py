@@ -384,4 +384,5 @@ def create_claw_agent(
         middleware=middleware,
         context_schema=context_schema,
         subagents=final_subagents,
+        name="langclaw",
     )
