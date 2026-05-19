@@ -127,3 +127,27 @@ def test_default_bus_names(tmp_path):
         else:
             os.environ.pop("LANGCLAW__CONFIG_DIR", None)
         importlib.reload(schema)
+
+
+def test_agent_builder_uses_config_name(monkeypatch, tmp_path):
+    """Agent builder passes config.agent_name to deepagents."""
+    from langclaw.agents.builder import create_claw_agent
+
+    # Set custom agent name and config dir
+    monkeypatch.setenv("LANGCLAW__AGENT_NAME", "testbot")
+    monkeypatch.setenv("LANGCLAW__CONFIG_DIR", str(tmp_path))
+    importlib.reload(schema)
+
+    config = schema.load_config()
+
+    # Create workspace files
+    workspace = config.agents.workspace_dir
+    workspace.mkdir(parents=True, exist_ok=True)
+    (workspace / "AGENTS.md").write_text("# Test Agent")
+    (workspace / "skills").mkdir(exist_ok=True)
+
+    # Build agent
+    agent = create_claw_agent(config)
+
+    # Verify agent name
+    assert agent.name == "testbot"
