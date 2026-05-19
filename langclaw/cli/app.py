@@ -380,6 +380,10 @@ def status() -> None:
 
     cfg = load_config()
 
+    typer.echo("\n=== Agent Configuration ===")
+    typer.echo(f"  Agent name:       {cfg.agent_name}")
+    typer.echo(f"  Config directory: {cfg.config_dir}")
+
     typer.echo("\n=== Provider Keys (env) ===")
     for env_key, display in _WELL_KNOWN_ENV_KEYS:
         state = "set" if os.environ.get(env_key) else "not set"
