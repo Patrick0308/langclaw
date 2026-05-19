@@ -264,14 +264,14 @@ class AsyncioBusConfig(BaseModel):
 
 class RabbitMQBusConfig(BaseModel):
     amqp_url: str = "amqp://guest:guest@localhost/"
-    queue_name: str = "langclaw.inbound"
-    exchange_name: str = "langclaw"
+    queue_name: str = Field(default_factory=lambda: f"{_AGENT_NAME}.inbound")
+    exchange_name: str = Field(default_factory=lambda: _AGENT_NAME)
 
 
 class KafkaBusConfig(BaseModel):
     bootstrap_servers: str = "localhost:9092"
-    topic: str = "langclaw.inbound"
-    group_id: str = "langclaw"
+    topic: str = Field(default_factory=lambda: f"{_AGENT_NAME}.inbound")
+    group_id: str = Field(default_factory=lambda: _AGENT_NAME)
 
 
 class BusConfig(BaseModel):
