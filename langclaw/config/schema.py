@@ -117,7 +117,7 @@ _AGENT_NAME = os.getenv("LANGCLAW__AGENT_NAME", "langclaw").strip() or "langclaw
 _CONFIG_DIR = os.getenv("LANGCLAW__CONFIG_DIR", "~/.langclaw").strip() or "~/.langclaw"
 
 # Validate agent name contains only safe characters
-if not re.match(r'^[a-zA-Z0-9_-]+$', _AGENT_NAME):
+if not re.match(r"^[a-zA-Z0-9_-]+$", _AGENT_NAME):
     raise ValueError(
         f"LANGCLAW__AGENT_NAME must contain only alphanumeric, hyphen, or underscore characters. "
         f"Got: {_AGENT_NAME!r}"
@@ -211,7 +211,7 @@ class AgentConfig(BaseModel):
     """Enable built-in high-confidence security patterns (DDoS, injection, XSS, etc.).
     Applied via ContentFilterMiddleware on ALL LLM calls for defense-in-depth."""
     extra_skills: StringList = Field(default_factory=list)
-    claude_sdk_require_approval: bool = True 
+    claude_sdk_require_approval: bool = True
 
     root_dir: str = Field(default_factory=lambda: str(_LANGCLAW_HOME))
 
@@ -554,14 +554,10 @@ def load_config() -> LangclawConfig:
         try:
             _LANGCLAW_HOME.mkdir(parents=True, exist_ok=True)
         except Exception as e:
-            raise RuntimeError(
-                f"Cannot create config directory {_LANGCLAW_HOME}: {e}"
-            ) from e
+            raise RuntimeError(f"Cannot create config directory {_LANGCLAW_HOME}: {e}") from e
 
     if not os.access(_LANGCLAW_HOME, os.W_OK):
-        raise RuntimeError(
-            f"Config directory {_LANGCLAW_HOME} is not writable"
-        )
+        raise RuntimeError(f"Config directory {_LANGCLAW_HOME} is not writable")
 
     return LangclawConfig()
 
