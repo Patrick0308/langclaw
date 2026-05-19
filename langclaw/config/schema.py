@@ -541,10 +541,28 @@ def load_config() -> LangclawConfig:
     Also calls ``load_dotenv()`` so that standard provider env vars
     (``ANTHROPIC_API_KEY``, ``OPENAI_API_KEY``, etc.) from ``.env``
     are available in ``os.environ`` for ``init_chat_model``.
+
+    Raises:
+        RuntimeError: If config directory cannot be created or is not writable.
     """
     from dotenv import load_dotenv
 
     load_dotenv(override=False)
+
+    # Ensure config directory is accessible
+    if not _LANGCLAW_HOME.exists():
+        try:
+            _LANGCLAW_HOME.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            raise RuntimeError(
+                f"Cannot create config directory {_LANGCLAW_HOME}: {e}"
+            ) from e
+
+    if not os.access(_LANGCLAW_HOME, os.W_OK):
+        raise RuntimeError(
+            f"Config directory {_LANGCLAW_HOME} is not writable"
+        )
+
     return LangclawConfig()
 
 
