@@ -112,6 +112,9 @@ StringDict = Annotated[dict[str, str], BeforeValidator(_parse_str_dict)]
 # Langclaw home
 # ---------------------------------------------------------------------------
 
+# Agent name validation pattern (used by both config schema and CLI)
+AGENT_NAME_PATTERN = r"^[a-zA-Z0-9_-]+$"
+
 # Read config directory from environment (once, at import time)
 _CONFIG_DIR = os.getenv("LANGCLAW__CONFIG_DIR", "~/.langclaw").strip() or "~/.langclaw"
 
@@ -555,7 +558,7 @@ class LangclawConfig(BaseSettings):
     @model_validator(mode="after")
     def _validate_agent_name(self) -> LangclawConfig:
         """Validate agent_name contains only safe characters."""
-        if not re.match(r"^[a-zA-Z0-9_-]+$", self.agent_name):
+        if not re.match(AGENT_NAME_PATTERN, self.agent_name):
             raise ValueError(
                 f"agent_name must contain only alphanumeric, hyphen, or underscore characters. "
                 f"Got: {self.agent_name!r}"
