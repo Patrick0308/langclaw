@@ -272,42 +272,8 @@ class BusConfig(BaseModel):
     rabbitmq: RabbitMQBusConfig = Field(default_factory=RabbitMQBusConfig)
     kafka: KafkaBusConfig = Field(default_factory=KafkaBusConfig)
 
-    @model_validator(mode="before")
-    @classmethod
-    def _set_defaults_from_agent_name(cls, values: Any) -> Any:
-        """Set bus queue/topic names from agent_name if not explicitly provided."""
-        if isinstance(values, dict):
-            # Get agent_name from parent config context (will be set by Pydantic)
-            # For now, fallback to env var or "langclaw"
-            agent_name = os.getenv("LANGCLAW__AGENT_NAME", "langclaw").strip() or "langclaw"
-
-            # Set RabbitMQ defaults
-            if "rabbitmq" in values and isinstance(values["rabbitmq"], dict):
-                if not values["rabbitmq"].get("queue_name"):
-                    values["rabbitmq"]["queue_name"] = f"{agent_name}.inbound"
-                if not values["rabbitmq"].get("exchange_name"):
-                    values["rabbitmq"]["exchange_name"] = agent_name
-            elif "rabbitmq" not in values:
-                # If rabbitmq key doesn't exist, set defaults
-                values["rabbitmq"] = {
-                    "queue_name": f"{agent_name}.inbound",
-                    "exchange_name": agent_name,
-                }
-
-            # Set Kafka defaults
-            if "kafka" in values and isinstance(values["kafka"], dict):
-                if not values["kafka"].get("topic"):
-                    values["kafka"]["topic"] = f"{agent_name}.inbound"
-                if not values["kafka"].get("group_id"):
-                    values["kafka"]["group_id"] = agent_name
-            elif "kafka" not in values:
-                # If kafka key doesn't exist, set defaults
-                values["kafka"] = {
-                    "topic": f"{agent_name}.inbound",
-                    "group_id": agent_name,
-                }
-
-        return values
+    # Note: Queue/topic name derivation moved to LangclawConfig.after validator
+    # to ensure agent_name from all sources (init, env, config.json) is available
 
 
 class CronSQLiteDataStoreConfig(BaseModel):
@@ -563,6 +529,61 @@ class LangclawConfig(BaseSettings):
                 f"agent_name must contain only alphanumeric, hyphen, or underscore characters. "
                 f"Got: {self.agent_name!r}"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _set_bus_defaults_from_agent_name(self) -> LangclawConfig:
+        """Set bus queue/topic names from agent_name if not explicitly provided.
+
+        This runs after all fields are validated, so agent_name is already resolved
+        from init params, env vars, or config.json with correct priority.
+
+        Strategy: Always derive queue/topic names from agent_name UNLESS they were
+        explicitly set to a custom value (not matching the `{name}.inbound` pattern).
+        """
+        agent_name = self.agent_name
+
+        # Update RabbitMQ queue/exchange names
+        # Strategy: Replace values that look auto-generated
+        # - queue_name: empty or matches *.inbound pattern
+        # - exchange_name: empty or matches simple agent name pattern (no dots/slashes)
+        rabbitmq_data = self.bus.rabbitmq.model_dump()
+        updated_rabbitmq = False
+
+        queue_name = rabbitmq_data["queue_name"]
+        if not queue_name or queue_name.endswith(".inbound"):
+            rabbitmq_data["queue_name"] = f"{agent_name}.inbound"
+            updated_rabbitmq = True
+
+        exchange_name = rabbitmq_data["exchange_name"]
+        # Update if empty OR if it looks like a simple name (no dots/slashes → likely an agent name)
+        if not exchange_name or ("." not in exchange_name and "/" not in exchange_name):
+            rabbitmq_data["exchange_name"] = agent_name
+            updated_rabbitmq = True
+
+        # Update Kafka topic/group names
+        kafka_data = self.bus.kafka.model_dump()
+        updated_kafka = False
+
+        topic = kafka_data["topic"]
+        if not topic or topic.endswith(".inbound"):
+            kafka_data["topic"] = f"{agent_name}.inbound"
+            updated_kafka = True
+
+        group_id = kafka_data["group_id"]
+        if not group_id or ("." not in group_id and "/" not in group_id):
+            kafka_data["group_id"] = agent_name
+            updated_kafka = True
+
+        # If any updates needed, recreate the bus config with updated nested configs
+        if updated_rabbitmq or updated_kafka:
+            self.bus = self.bus.model_copy(
+                update={
+                    "rabbitmq": RabbitMQBusConfig(**rabbitmq_data),
+                    "kafka": KafkaBusConfig(**kafka_data),
+                }
+            )
+
         return self
 
     @classmethod
