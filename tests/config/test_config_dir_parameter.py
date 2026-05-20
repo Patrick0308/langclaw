@@ -8,6 +8,21 @@ import pytest
 from langclaw.config.schema import LangclawConfig
 
 
+@pytest.fixture(autouse=True)
+def restore_config_globals():
+    """Restore config globals after each test to prevent pollution."""
+    import langclaw.config.schema as schema_module
+
+    original_home = schema_module._LANGCLAW_HOME
+    original_path = schema_module._CONFIG_PATH
+
+    yield
+
+    # Restore after test completes
+    schema_module._LANGCLAW_HOME = original_home
+    schema_module._CONFIG_PATH = original_path
+
+
 def test_config_dir_parameter_overrides_env_var(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

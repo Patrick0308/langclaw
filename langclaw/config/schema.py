@@ -15,7 +15,7 @@ import re
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, BeforeValidator, Field, field_validator, model_validator
+from pydantic import BaseModel, BeforeValidator, Field, PrivateAttr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic_settings.sources.providers.dotenv import DotEnvSettingsSource
 from pydantic_settings.sources.providers.env import EnvSettingsSource
@@ -493,6 +493,9 @@ class LangclawConfig(BaseSettings):
     Priority: init parameter > env var > config.json > default
     """
 
+    # Private attribute to store resolved config_dir
+    _config_dir_resolved: Path = PrivateAttr()
+
     def __init__(
         self,
         config_dir: str | Path | None = None,
@@ -511,15 +514,23 @@ class LangclawConfig(BaseSettings):
             _LANGCLAW_HOME = Path(config_dir).expanduser().resolve()
             _CONFIG_PATH = _LANGCLAW_HOME / "config.json"
 
+        # Call parent __init__ first to initialize Pydantic internals
         super().__init__(**data)
+
+        # Store resolved config_dir as instance state (captures current _LANGCLAW_HOME)
+        # Must be set AFTER super().__init__() for PrivateAttr to work properly
+        self._config_dir_resolved = _LANGCLAW_HOME
 
     @property
     def config_dir(self) -> Path:
-        """The configured root directory (read-only, from LANGCLAW__CONFIG_DIR env var).
+        """The configured root directory.
+
+        Returns the directory specified via config_dir parameter (if provided),
+        otherwise returns the directory from LANGCLAW__CONFIG_DIR env var.
 
         Default: ~/.langclaw
         """
-        return _LANGCLAW_HOME
+        return self._config_dir_resolved
 
     @model_validator(mode="before")
     @classmethod
