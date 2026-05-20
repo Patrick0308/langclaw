@@ -71,22 +71,22 @@ def test_config_dir_parameter_resolves_relative_paths(tmp_path: Path) -> None:
     assert str(cfg.config_dir).endswith("test_config")
 
 
-def test_agent_name_code_parameter_overrides_all(
+def test_agent_name_env_var_overrides_all(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Test agent_name code parameter takes highest priority."""
+    """Test agent_name env var takes highest priority."""
     # Setup config directory
     config_dir = tmp_path / "test_config"
     config_dir.mkdir()
     config_file = config_dir / "config.json"
     config_file.write_text(json.dumps({"agent_name": "filebot"}, indent=2))
 
-    # Set environment variable
+    # Set environment variable (highest priority)
     monkeypatch.setenv("LANGCLAW__AGENT_NAME", "envbot")
     monkeypatch.setenv("LANGCLAW__CONFIG_DIR", str(config_dir))
 
-    # Load config with code parameter (highest priority)
+    # Load config with code parameter
     cfg = LangclawConfig(agent_name="codebot")
 
-    # Verify code parameter overrides everything
-    assert cfg.agent_name == "codebot"
+    # Verify env var overrides everything
+    assert cfg.agent_name == "envbot"

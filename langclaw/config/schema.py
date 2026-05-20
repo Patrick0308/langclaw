@@ -493,7 +493,7 @@ class LangclawConfig(BaseSettings):
     - Deepagents agent name parameter
     - CLI output and logging
 
-    Priority: init parameter > env var > config.json > default
+    Priority: env var > init parameter > config.json > default
     """
 
     # Private attribute to store resolved config_dir
@@ -630,8 +630,8 @@ class LangclawConfig(BaseSettings):
         file_secret_settings: object,
     ) -> tuple:
         return (
-            init_settings,
             _LangclawEnvSource(settings_cls),
+            init_settings,
             _LangclawDotEnvSource(
                 settings_cls,
                 env_file=".env",
