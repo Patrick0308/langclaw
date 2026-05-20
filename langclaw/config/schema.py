@@ -493,6 +493,26 @@ class LangclawConfig(BaseSettings):
     Priority: init parameter > env var > config.json > default
     """
 
+    def __init__(
+        self,
+        config_dir: str | Path | None = None,
+        **data: Any,
+    ) -> None:
+        """Initialize configuration with optional config_dir override.
+
+        Args:
+            config_dir: Override config directory (runtime only, not persisted).
+                       Takes precedence over LANGCLAW__CONFIG_DIR env var.
+            **data: Other configuration fields to override.
+        """
+        # Handle config_dir parameter by updating global state
+        if config_dir is not None:
+            global _LANGCLAW_HOME, _CONFIG_PATH
+            _LANGCLAW_HOME = Path(config_dir).expanduser().resolve()
+            _CONFIG_PATH = _LANGCLAW_HOME / "config.json"
+
+        super().__init__(**data)
+
     @property
     def config_dir(self) -> Path:
         """The configured root directory (read-only, from LANGCLAW__CONFIG_DIR env var).
