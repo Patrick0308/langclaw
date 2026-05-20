@@ -28,9 +28,6 @@ app = typer.Typer(
 cron_app = typer.Typer(help="Manage scheduled cron jobs.", no_args_is_help=True)
 app.add_typer(cron_app, name="cron")
 
-config_app = typer.Typer(help="Manage configuration settings.", no_args_is_help=True)
-app.add_typer(config_app, name="config")
-
 
 # ---------------------------------------------------------------------------
 # langclaw init
@@ -408,73 +405,6 @@ def status() -> None:
     typer.echo(f"  Checkpointer: {cfg.checkpointer.backend}")
     typer.echo(f"  Agent model:  {cfg.agents.model}")
     typer.echo()
-
-
-# ---------------------------------------------------------------------------
-# langclaw config
-# ---------------------------------------------------------------------------
-
-
-@config_app.command("set")
-def config_set(
-    key: Annotated[str, typer.Argument(help="Configuration key")],
-    value: Annotated[str, typer.Argument(help="Configuration value")],
-) -> None:
-    """Set a configuration value in config.json."""
-    import json
-    import re
-
-    from langclaw.config.schema import _CONFIG_PATH
-
-    # Whitelist of writable config keys
-    WRITABLE_KEYS = {
-        "agent_name": str,
-        # Future: "log_level", "agents.model", etc.
-    }
-
-    if key not in WRITABLE_KEYS:
-        if key == "config_dir":
-            typer.echo(
-                "Error: 'config_dir' is read-only. Use environment variable:\n"
-                "  export LANGCLAW__CONFIG_DIR=~/.mybot\n"
-                "Or pass as parameter:\n"
-                "  LangclawConfig(config_dir='~/.mybot')",
-                err=True,
-            )
-        else:
-            typer.echo(
-                f"Error: Unknown configuration key: {key!r}\n"
-                f"Supported keys: {', '.join(WRITABLE_KEYS)}",
-                err=True,
-            )
-        raise typer.Exit(1)
-
-    # Validate value format
-    if key == "agent_name":
-        if not re.match(r"^[a-zA-Z0-9_-]+$", value):
-            typer.echo(
-                f"Error: agent_name must contain only alphanumeric, hyphen, or underscore.\n"
-                f"Got: {value!r}",
-                err=True,
-            )
-            raise typer.Exit(1)
-
-    # Load current config
-    if not _CONFIG_PATH.exists():
-        typer.echo(
-            f"Config file not found: {_CONFIG_PATH}\nRun 'langclaw init' first.",
-            err=True,
-        )
-        raise typer.Exit(1)
-
-    # Update config.json
-    config_data = json.loads(_CONFIG_PATH.read_text())
-    config_data[key] = value
-    _CONFIG_PATH.write_text(json.dumps(config_data, indent=2))
-
-    typer.echo(f"✓ {key} = {value}")
-    typer.echo(f"Config updated in {_CONFIG_PATH}")
-    typer.echo("Restart required for changes to take effect.")
 
 
 # ---------------------------------------------------------------------------
