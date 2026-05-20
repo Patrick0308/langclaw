@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from langclaw.config import schema
 
@@ -59,8 +60,8 @@ def test_invalid_agent_name_raises(monkeypatch):
     """Invalid characters in agent name raise ValueError."""
     monkeypatch.setenv("LANGCLAW__AGENT_NAME", "my bot!")
 
-    with pytest.raises(ValueError, match="must contain only alphanumeric"):
-        importlib.reload(schema)
+    with pytest.raises(ValidationError, match="must contain only alphanumeric"):
+        schema.load_config()
 
 
 def test_custom_config_dir(monkeypatch, tmp_path):

@@ -15,7 +15,7 @@ import re
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, BeforeValidator, Field, model_validator
+from pydantic import BaseModel, BeforeValidator, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic_settings.sources.providers.dotenv import DotEnvSettingsSource
 from pydantic_settings.sources.providers.env import EnvSettingsSource
@@ -112,16 +112,8 @@ StringDict = Annotated[dict[str, str], BeforeValidator(_parse_str_dict)]
 # Langclaw home
 # ---------------------------------------------------------------------------
 
-# Read agent name and config directory from environment (once, at import time)
-_AGENT_NAME = os.getenv("LANGCLAW__AGENT_NAME", "langclaw").strip() or "langclaw"
+# Read config directory from environment (once, at import time)
 _CONFIG_DIR = os.getenv("LANGCLAW__CONFIG_DIR", "~/.langclaw").strip() or "~/.langclaw"
-
-# Validate agent name contains only safe characters
-if not re.match(r"^[a-zA-Z0-9_-]+$", _AGENT_NAME):
-    raise ValueError(
-        f"LANGCLAW__AGENT_NAME must contain only alphanumeric, hyphen, or underscore characters. "
-        f"Got: {_AGENT_NAME!r}"
-    )
 
 # Expand and resolve the config directory
 _LANGCLAW_HOME = Path(_CONFIG_DIR).expanduser().resolve()
@@ -264,14 +256,14 @@ class AsyncioBusConfig(BaseModel):
 
 class RabbitMQBusConfig(BaseModel):
     amqp_url: str = "amqp://guest:guest@localhost/"
-    queue_name: str = Field(default_factory=lambda: f"{_AGENT_NAME}.inbound")
-    exchange_name: str = Field(default_factory=lambda: _AGENT_NAME)
+    queue_name: str = ""
+    exchange_name: str = ""
 
 
 class KafkaBusConfig(BaseModel):
     bootstrap_servers: str = "localhost:9092"
-    topic: str = Field(default_factory=lambda: f"{_AGENT_NAME}.inbound")
-    group_id: str = Field(default_factory=lambda: _AGENT_NAME)
+    topic: str = ""
+    group_id: str = ""
 
 
 class BusConfig(BaseModel):
@@ -279,6 +271,43 @@ class BusConfig(BaseModel):
     asyncio: AsyncioBusConfig = Field(default_factory=AsyncioBusConfig)
     rabbitmq: RabbitMQBusConfig = Field(default_factory=RabbitMQBusConfig)
     kafka: KafkaBusConfig = Field(default_factory=KafkaBusConfig)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _set_defaults_from_agent_name(cls, values: Any) -> Any:
+        """Set bus queue/topic names from agent_name if not explicitly provided."""
+        if isinstance(values, dict):
+            # Get agent_name from parent config context (will be set by Pydantic)
+            # For now, fallback to env var or "langclaw"
+            agent_name = os.getenv("LANGCLAW__AGENT_NAME", "langclaw").strip() or "langclaw"
+
+            # Set RabbitMQ defaults
+            if "rabbitmq" in values and isinstance(values["rabbitmq"], dict):
+                if not values["rabbitmq"].get("queue_name"):
+                    values["rabbitmq"]["queue_name"] = f"{agent_name}.inbound"
+                if not values["rabbitmq"].get("exchange_name"):
+                    values["rabbitmq"]["exchange_name"] = agent_name
+            elif "rabbitmq" not in values:
+                # If rabbitmq key doesn't exist, set defaults
+                values["rabbitmq"] = {
+                    "queue_name": f"{agent_name}.inbound",
+                    "exchange_name": agent_name,
+                }
+
+            # Set Kafka defaults
+            if "kafka" in values and isinstance(values["kafka"], dict):
+                if not values["kafka"].get("topic"):
+                    values["kafka"]["topic"] = f"{agent_name}.inbound"
+                if not values["kafka"].get("group_id"):
+                    values["kafka"]["group_id"] = agent_name
+            elif "kafka" not in values:
+                # If kafka key doesn't exist, set defaults
+                values["kafka"] = {
+                    "topic": f"{agent_name}.inbound",
+                    "group_id": agent_name,
+                }
+
+        return values
 
 
 class CronSQLiteDataStoreConfig(BaseModel):
@@ -487,14 +516,16 @@ class LangclawConfig(BaseSettings):
     cron: CronConfig = Field(default_factory=CronConfig)
     heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
 
-    @property
-    def agent_name(self) -> str:
-        """The configured agent name (read-only, from LANGCLAW__AGENT_NAME env var).
+    agent_name: str = Field(default="langclaw")
+    """Agent identifier used throughout the system.
 
-        Used in message bus queue/topic names, deepagents agent name, and display output.
-        Default: "langclaw"
-        """
-        return _AGENT_NAME
+    Used in:
+    - Message bus queue/topic names: {agent_name}.inbound
+    - Deepagents agent name parameter
+    - CLI output and logging
+
+    Priority: init parameter > env var > config.json > default
+    """
 
     @property
     def config_dir(self) -> Path:
@@ -513,6 +544,26 @@ class LangclawConfig(BaseSettings):
             merged = _deep_merge(json_data, values)
             return merged
         return values
+
+    @field_validator("agent_name", mode="before")
+    @classmethod
+    def _strip_agent_name(cls, v: Any) -> str:
+        """Strip whitespace from agent_name and ensure it's not empty."""
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return "langclaw"  # Fallback to default if empty after strip
+        return v
+
+    @model_validator(mode="after")
+    def _validate_agent_name(self) -> LangclawConfig:
+        """Validate agent_name contains only safe characters."""
+        if not re.match(r"^[a-zA-Z0-9_-]+$", self.agent_name):
+            raise ValueError(
+                f"agent_name must contain only alphanumeric, hyphen, or underscore characters. "
+                f"Got: {self.agent_name!r}"
+            )
+        return self
 
     @classmethod
     def settings_customise_sources(  # type: ignore[override]
