@@ -2,18 +2,10 @@
 
 Multi-channel AI agent framework built on LangChain, LangGraph, and deepagents.
 
-See @AGENTS.md for package map and code conventions.
-See @docs/ARCHITECTURE.md for design rationale.
+**See @AGENTS.md for package structure, code conventions, and development commands.**
+**See @docs/ARCHITECTURE.md for design rationale and framework philosophy.**
 
-## Quick Reference
-
-```bash
-uv sync --group dev              # Install all deps
-uv run pytest tests/ -v          # Run tests
-uv run ruff check . --fix        # Lint + auto-fix
-uv run ruff format .             # Format code
-uv run pre-commit run --all-files  # Full pre-commit suite
-```
+---
 
 ## Key File Locations
 
